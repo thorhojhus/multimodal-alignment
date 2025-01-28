@@ -1,0 +1,7 @@
+torch
+transformers
+trl
+pillow
+liger-kernel
+packaging
+ninja
