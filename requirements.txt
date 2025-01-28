@@ -7,3 +7,6 @@ liger-kernel
 packaging
 ninja
 nvidia-ml-py
+evaluate
+librosa
+soundfile
