@@ -1,0 +1,4 @@
+- Gradient checkpointing
+- Gradient accumulation
+- Liger kernels
+- Flash attention 2
