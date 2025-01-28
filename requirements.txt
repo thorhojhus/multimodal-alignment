@@ -1,7 +1,9 @@
 torch
+bitsandbytes
 transformers
 trl
 pillow
 liger-kernel
 packaging
 ninja
+nvidia-ml-py
