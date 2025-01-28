@@ -1,6 +1,6 @@
-.PHONY: all create-env install-requirements install-flash-attn clean-env
+.PHONY: all create-env install-requirements install-flash-attn clean
 
-ENV_NAME = multimodal
+ENV_NAME = mm
 PYTHON_VERSION = 3.12
 
 all: create-env install-requirements install-flash-attn
@@ -17,6 +17,6 @@ install-flash-attn:
 	@echo "Installing flash-attn with --no-build-isolation in Conda environment '$(ENV_NAME)'..."
 	conda run -n $(ENV_NAME) pip install flash-attn --no-build-isolation
 
-clean-env:
+clean:
 	@echo "Removing Conda environment '$(ENV_NAME)'..."
 	conda remove -y -n $(ENV_NAME) --all
