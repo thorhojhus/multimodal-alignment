@@ -20,10 +20,8 @@ def print_summary(result):
 # Workaround for CUDA using RAM as VRAM in WSL
 #torch.cuda.set_per_process_memory_fraction(1.0, 0)
 
-# Load the dataset and subset to 2000 samples
 dataset = load_dataset("trl-lib/Capybara", split="train")
 
-# Define training arguments
 training_args = SFTConfig(
     output_dir="Qwen/Qwen2.5-0.5B-SFT",
     per_device_train_batch_size=8,
@@ -39,14 +37,12 @@ training_args = SFTConfig(
     }
 )
 
-# Initialize the trainer
 trainer = SFTTrainer(
     args=training_args,
     model="Qwen/Qwen2.5-0.5B",
     train_dataset=dataset,
 )
 
-# Train the model
 result = trainer.train()
 print_summary(result)
 

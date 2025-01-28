@@ -1,6 +1,6 @@
 .PHONY: all create-env install-requirements install-flash-attn clean
 
-ENV_NAME = multimodal
+ENV_NAME = mm
 PYTHON_VERSION = 3.12
 
 all: create-env install-requirements install-flash-attn
