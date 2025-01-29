@@ -46,7 +46,8 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         )[0]
         
         # find audio token position and replace with actual token ID
-        audio_token_idx = (tokenized == self.tokenizer.convert_tokens_to_ids("{{content}}")).nonzero()
+        audio_token_idx = (tokenized == self.audio_token_id).nonzero()
+
         tokenized[audio_token_idx] = self.tokenizer.convert_tokens_to_ids(self.audio_token)
         
         return {
