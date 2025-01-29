@@ -43,16 +43,30 @@ class AudioLLMModel():
         self.downsample_factor = config.downsample_factor
 
     def create_lm(self, config):
-        return transformers.AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-360M-Instruct", 
-            attn_implementation="eager", torch_dtype=torch.bfloat16, device_map="cuda")
+        lm = transformers.AutoModelForCausalLM.from_pretrained(
+            "HuggingFaceTB/SmolLM2-360M-Instruct", 
+            attn_implementation="flash_attention_2", 
+            torch_dtype=torch.bfloat16, 
+            device_map="cuda"
+        )
+        for param in lm.parameters():
+            param.requires_grad = False
+        return lm
 
     def create_projector(self, config):
         return Projector(config.whisper_dim, config.embed_dim, config.inter_dim, config.downsample_factor).to("cuda", torch.bfloat16)
 
     def create_audio_encoder(self, config):
-        whisper = transformers.WhisperForConditionalGeneration.from_pretrained("openai/whisper-base.en", 
-            attn_implementation="eager", torch_dtype=torch.bfloat16, device_map="cuda")
-        return whisper.model.encoder
+        whisper = transformers.WhisperForConditionalGeneration.from_pretrained(
+            "openai/whisper-base.en", 
+            attn_implementation="flash_attention_2", 
+            torch_dtype=torch.bfloat16, 
+            device_map="cuda"
+        )
+        encoder = whisper.model.encoder
+        for param in encoder.parameters():
+            param.requires_grad = False
+        return encoder
 
     def add_special_token(self):
         if self.audio_token_str not in self.tokenizer.get_vocab():
@@ -103,7 +117,8 @@ class AudioLLMModel():
 
     def forward(self, input_ids: torch.Tensor, audio_features: torch.Tensor, 
                 attention_mask: torch.Tensor = None, labels: torch.Tensor = None):
-        audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+        with torch.no_grad():
+            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
         audio_embeds = self.projector(audio_encoded)
         B, D, _ = audio_embeds.shape
         
@@ -138,7 +153,6 @@ class AudioLLMModel():
         combined_embeds = torch.stack(combined_embeds)
 
         outputs = self.lm(inputs_embeds=combined_embeds, attention_mask=new_attention_mask, labels=new_labels)
-        breakpoint()
         return outputs
 
 if __name__ == "__main__":
