@@ -41,7 +41,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         # tokenize conversation with special handling for audio token
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
-            add_generation_prompt=True,
+            add_generation_prompt=False,
             return_tensors="pt"
         )[0]
         
@@ -59,21 +59,25 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
     def _create_labels(self, tokenized, conversation):
         # mask all tokens except assistant response
         labels = tokenized.clone()
-        sep = self.tokenizer.eos_token_id
-        response_start = None
-        
-        # find the start of the assistant response
-        for i, token in enumerate(labels):
-            if token == sep:
-                if response_start is None:
-                    response_start = i + 1
-                else:
-                    response_end = i
-                    break
-        
+        bos_token_id = self.tokenizer.bos_token_id
+        eos_token_id = self.tokenizer.eos_token_id
+
+        # find all BOS and EOS positions
+        bos_positions = (tokenized == bos_token_id).nonzero(as_tuple=True)[0]
+        eos_positions = (tokenized == eos_token_id).nonzero(as_tuple=True)[0]
+
+        # get the last BOS token (start of assistant response)
+        last_bos = bos_positions[-1].item()
+        response_start = last_bos + 1
+
+        # find the first EOS after last BOS (end of assistant response)
+        eos_after_bos = eos_positions[eos_positions > last_bos]
+        response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(tokenized)
+
         # mask non-response parts
         labels[:response_start] = -100
         labels[response_end:] = -100
+
         return labels
 
 def collate_fn(batch):
