@@ -1,103 +1,8 @@
-from datasets import load_dataset, Audio
-from transformers import AutoProcessor
 import torch
 from torch.utils.data import DataLoader
-from models.audio_llm import AudioLLMModel, AudioLLMConfig, Projector 
-import aiohttp
-
-class LibriSpeechChatDataset(torch.utils.data.Dataset):
-    def __init__(self, split="train.clean.100", tokenizer=None, processor=None):
-        self.dataset = load_dataset("librispeech_asr", split=split, trust_remote_code=True, storage_options={'client_kwargs': {'timeout': aiohttp.ClientTimeout(total=3600)}})
-        self.tokenizer = tokenizer
-        self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
-        self.audio_token = "<|audio|>"
-        self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
-
-        
-    def __len__(self):
-        return len(self.dataset)
-
-    def _audio_to_features(self, audio):
-        audio = audio["array"]
-        inputs = self.processor(
-            audio, 
-            sampling_rate=self.processor.feature_extractor.sampling_rate,
-            return_tensors="pt",
-            truncation=True
-        )
-        return inputs.input_features[0]
-
-    def _format_chat(self, example):
-        return [
-            {"role": "user", "content": f"Transcribe {self.audio_token}"},
-            {"role": "assistant", "content": example["text"]}
-        ]
-
-    def __getitem__(self, idx):
-        example = self.dataset[idx]
-        audio_features = self._audio_to_features(example["audio"])
-        
-        # format as chat
-        conversation = self._format_chat(example)
-        
-        # tokenize conversation with special handling for audio token
-        tokenized = self.tokenizer.apply_chat_template(
-            conversation,
-            add_generation_prompt=True,
-            return_tensors="pt"
-        )[0]
-        
-        # find audio token position and replace with actual token ID
-        audio_token_idx = (tokenized == self.audio_token_id).nonzero()
-
-        tokenized[audio_token_idx] = self.audio_token_id
-        
-        return {
-            "input_ids": tokenized,
-            "audio_features": audio_features,
-            "labels": self._create_labels(tokenized, conversation)
-        }
-
-    def _create_labels(self, tokenized, conversation):
-        # mask all tokens except assistant response
-        labels = tokenized.clone()
-        sep = self.tokenizer.eos_token_id
-        response_start = None
-        
-        # find the start of the assistant response
-        for i, token in enumerate(labels):
-            if token == sep:
-                if response_start is None:
-                    response_start = i + 1
-                else:
-                    response_end = i
-                    break
-        
-        # mask non-response parts
-        labels[:response_start] = -100
-        labels[response_end:] = -100
-        return labels
-
-def collate_fn(batch):
-    max_len = max(len(item["input_ids"]) for item in batch)
-    input_ids = []
-    labels = []
-    audio_features = []
-    
-    for item in batch:
-        # pad input_ids and labels
-        pad_len = max_len - len(item["input_ids"])
-        input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=0))
-        labels.append(torch.nn.functional.pad(item["labels"], (0, pad_len), value=-100))
-        
-        # audio features
-        audio_features.append(item["audio_features"])
-    
-    return {
-        "input_ids": torch.stack(input_ids),
-        "audio_features": torch.stack(audio_features),
-        "labels": torch.stack(labels)
-    }
+from transformers import AutoProcessor
+from models.audio_llm import AudioLLMModel, AudioLLMConfig
+from dataset.librispeech import LibriSpeechChatDataset, collate_fn
 
 def train(model, dataset, num_epochs=3, batch_size=4):
     # create optimizer only for trainable parameters
@@ -107,7 +12,7 @@ def train(model, dataset, num_epochs=3, batch_size=4):
     ]
     optimizer = torch.optim.AdamW(trainable_params, lr=5e-5)
     
-    dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=True, pin_memory=True)
     
     for epoch in range(num_epochs):
         model.train()
@@ -115,9 +20,9 @@ def train(model, dataset, num_epochs=3, batch_size=4):
         
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
-            input_ids = batch["input_ids"].to("cuda")
-            audio_features = batch["audio_features"].to("cuda", torch.bfloat16)
-            labels = batch["labels"].to("cuda")
+            input_ids = batch["input_ids"].to("cuda", non_blocking=True)
+            audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+            labels = batch["labels"].to("cuda", non_blocking=True)
             
             # forward pass
             outputs = model(
@@ -163,4 +68,4 @@ if __name__ == "__main__":
     model.lm.get_input_embeddings().weight.requires_grad = True
     
     # start training
-    train(model, dataset, num_epochs=3, batch_size=4)
+    train(model, dataset, num_epochs=3, batch_size=8)
