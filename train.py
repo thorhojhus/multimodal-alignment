@@ -11,6 +11,8 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
+        self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
+
         
     def __len__(self):
         return len(self.dataset)
@@ -48,7 +50,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         # find audio token position and replace with actual token ID
         audio_token_idx = (tokenized == self.audio_token_id).nonzero()
 
-        tokenized[audio_token_idx] = self.tokenizer.convert_tokens_to_ids(self.audio_token)
+        tokenized[audio_token_idx] = self.audio_token_id
         
         return {
             "input_ids": tokenized,

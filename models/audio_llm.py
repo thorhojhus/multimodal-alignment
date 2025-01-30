@@ -31,8 +31,9 @@ class Projector(nn.Sequential):
             x = x.transpose(1, 2)
         return x
 
-class AudioLLMModel():
+class AudioLLMModel(nn.Module):
     def __init__(self, config):
+        super().__init__()
         self.lm = self.create_lm(config)
         self.projector = self.create_projector(config)
         self.audio_encoder = self.create_audio_encoder(config)
