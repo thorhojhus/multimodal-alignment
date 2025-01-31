@@ -2,7 +2,7 @@ import transformers
 import torch
 from torch import nn
 from dataclasses import dataclass
-from liger_kernel.transformers import AutoLigerKernelForCausalLM
+
 @dataclass
 class AudioLLMConfig:
     whisper_dim: int = 512
@@ -31,7 +31,9 @@ class Projector(nn.Module):
         
         if self.downsample is not None:
             B, T, D = x.shape
-            # Ensure T is divisible by downsample_factor (preprocess if needed)
+            assert T % self.downsample_factor == 0, \
+                f"Time dimension {T} must be divisible by downsample factor {self.downsample_factor}"
+            # group and concatenate features
             x = x.reshape(B, T // self.downsample_factor, self.downsample_factor * D)
             x = self.downsample(x)
         return x
@@ -50,8 +52,7 @@ class AudioLLMModel(nn.Module):
         self.downsample_factor = config.downsample_factor
 
     def create_lm(self, config):
-        # cannot be used with torch compile, should be config in the future
-        lm = AutoLigerKernelForCausalLM.from_pretrained(
+        lm = transformers.AutoModelForCausalLM.from_pretrained(
             "HuggingFaceTB/SmolLM2-360M-Instruct", 
             attn_implementation="flash_attention_2", 
             torch_dtype=torch.bfloat16, 
@@ -81,20 +82,46 @@ class AudioLLMModel(nn.Module):
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
             self.lm.resize_token_embeddings(len(self.tokenizer), pad_to_multiple_of=8)
 
-    def adjust_masks_and_labels(self, input_ids, attention_mask, labels, audio_embeds):
+    def adjust_masks_and_labels(self, input_ids, attention_mask, labels, audio_token_positions, audio_embeds):
+        B, T = input_ids.shape
         D = audio_embeds.shape[1]
-        audio_mask = input_ids == self.audio_token_id
         
-        counts = torch.where(audio_mask, D, 1).flatten()  # (B*T,)
+        new_attention_masks = []
+        new_labels_list = []
         
-        # expand masks and labels using flattened counts
-        new_attention_mask = torch.repeat_interleave(attention_mask.flatten(), counts).view(attention_mask.size(0), -1)
-        new_labels = torch.repeat_interleave(labels.flatten(), counts).view(labels.size(0), -1)
+        for batch_idx in range(B):
+            positions = [pos[1] for pos in audio_token_positions if pos[0] == batch_idx]
+            num_audio_tokens = len(positions)
+            new_seq_len = T + num_audio_tokens * (D - 1)
+            
+            new_attention = torch.zeros(new_seq_len, dtype=attention_mask.dtype, device=attention_mask.device)
+            new_labels = torch.full((new_seq_len,), -100, dtype=labels.dtype, device=labels.device)
+            
+            orig_idx = 0
+            new_idx = 0
+            audio_pos_iter = iter(sorted(positions))
+            next_audio_pos = next(audio_pos_iter, None)
+            
+            while orig_idx < T:
+                if orig_idx == next_audio_pos:
+                    audio_duration = D
+                    new_attention[new_idx:new_idx + audio_duration] = 1
+                    new_labels[new_idx:new_idx + audio_duration] = -100
+                    next_audio_pos = next(audio_pos_iter, None)
+                    new_idx += audio_duration
+                    orig_idx += 1
+                else:
+                    new_attention[new_idx] = attention_mask[batch_idx, orig_idx]
+                    if orig_idx < T - 1:
+                        new_labels[new_idx] = labels[batch_idx, orig_idx]
+                    new_idx += 1
+                    orig_idx += 1
+            
+            new_attention_masks.append(new_attention)
+            new_labels_list.append(new_labels)
         
-        # create expanded audio mask and apply label masking
-        expanded_audio_mask = torch.repeat_interleave(audio_mask.flatten(), counts).bool().view(audio_mask.size(0), -1)
-        new_labels[expanded_audio_mask] = -100
-        
+        new_attention_mask = torch.stack(new_attention_masks)
+        new_labels = torch.stack(new_labels_list)
         return new_attention_mask, new_labels
 
     def forward(self, input_ids: torch.Tensor, audio_features: torch.Tensor, 
@@ -105,35 +132,35 @@ class AudioLLMModel(nn.Module):
         B, D, _ = audio_embeds.shape
         
         input_embeds = self.lm.get_input_embeddings()(input_ids)
+        audio_token_positions = (input_ids == self.audio_token_id).nonzero(as_tuple=False).tolist()
         
+        # adjust attention_mask and labels before modifying input_embeds
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if labels is None:
             labels = input_ids.clone()
 
-        # handle labels with padding tokens
+        # handle labels by shifting and setting padding to -100
         labels.masked_fill_(labels == self.pad_token_id, -100)
         
-        # adjust masks and labels
+        # adjust masks and labels for audio embeddings
         new_attention_mask, new_labels = self.adjust_masks_and_labels(
-            input_ids, attention_mask, labels, audio_embeds
+            input_ids, attention_mask, labels, audio_token_positions, audio_embeds
         )
         
-        # vectorized construction of combined_embeds
-        audio_mask = input_ids == self.audio_token_id
-        counts = torch.where(audio_mask, D, 1).flatten()
+        combined_embeds = []
+        for batch_idx in range(B):
+            batch_positions = [pos[1] for pos in audio_token_positions if pos[0] == batch_idx]
+            current_embeds = input_embeds[batch_idx]
+            for pos in sorted(batch_positions, reverse=True):
+                audio_embed = audio_embeds[batch_idx]
+                before = current_embeds[:pos]
+                after = current_embeds[pos+1:]
+                current_embeds = torch.cat([before, audio_embed, after], dim=0)
+            combined_embeds.append(current_embeds)
         
-        # expand embeddings
-        combined_embeds = torch.repeat_interleave(
-            input_embeds.flatten(end_dim=1), 
-            counts, 
-            dim=0
-        ).view(input_embeds.size(0), -1, input_embeds.size(-1))
-        
-        # insert audio embeddings using boolean mask
-        audio_positions = torch.repeat_interleave(audio_mask.flatten(), counts).view(audio_mask.size(0), -1)
-        combined_embeds[audio_positions] = audio_embeds.flatten(end_dim=1)
-        
+        combined_embeds = torch.stack(combined_embeds)
+
         outputs = self.lm(inputs_embeds=combined_embeds, attention_mask=new_attention_mask, labels=new_labels)
         return outputs
 

@@ -10,7 +10,7 @@ def train(model, dataset, num_epochs=3, batch_size=4):
         {"params": model.lm.get_input_embeddings().parameters()},
         {"params": model.projector.parameters()}
     ]
-    optimizer = torch.optim.AdamW(trainable_params, lr=3e-4)
+    optimizer = torch.optim.AdamW(trainable_params, lr=5e-5)
     
     dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=True, pin_memory=True)
     
