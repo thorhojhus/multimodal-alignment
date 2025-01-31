@@ -10,7 +10,7 @@ class AudioLLMConfig:
     inter_dim: int = 512
     downsample_factor: int = 6
 
-class Projector(nn.Sequential):
+class Projector(nn.Module):
     def __init__(self, whisper_dim, embed_dim, inter_dim, downsample_factor=6):
         super().__init__()
         self.downsample_factor = downsample_factor
@@ -18,17 +18,24 @@ class Projector(nn.Sequential):
         self.w1 = nn.Linear(whisper_dim, inter_dim, bias=False)
         self.w2 = nn.Linear(inter_dim, embed_dim, bias=False)
         self.ln_post = nn.RMSNorm(embed_dim)
-        self.downsample = nn.AvgPool1d(kernel_size=downsample_factor, stride=downsample_factor) if downsample_factor else None
-    
+        if downsample_factor:
+            self.downsample = nn.Linear(downsample_factor * embed_dim, embed_dim, bias=False)
+        else:
+            self.downsample = None
+        
     def forward(self, x):
         x = self.ln_pre(x)
         x = self.w1(x)
         x = self.w2(x)
         x = self.ln_post(x)
+        
         if self.downsample is not None:
-            x = x.transpose(1, 2)
+            B, T, D = x.shape
+            assert T % self.downsample_factor == 0, \
+                f"Time dimension {T} must be divisible by downsample factor {self.downsample_factor}"
+            # group and concatenate features
+            x = x.reshape(B, T // self.downsample_factor, self.downsample_factor * D)
             x = self.downsample(x)
-            x = x.transpose(1, 2)
         return x
 
 class AudioLLMModel(nn.Module):
