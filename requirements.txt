@@ -10,3 +10,4 @@ nvidia-ml-py
 evaluate
 librosa
 soundfile
+truecase

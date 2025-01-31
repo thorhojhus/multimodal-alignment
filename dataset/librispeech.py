@@ -1,6 +1,7 @@
 import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
+import truecase
 import aiohttp # needed to get around timeout bug in librispeech_asr
 
 class LibriSpeechChatDataset(torch.utils.data.Dataset):
@@ -28,15 +29,17 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
     def _format_chat(self, example):
         return [
             {"role": "user", "content": f"Transcribe {self.audio_token}"},
-            {"role": "assistant", "content": example["text"]}
+            {"role": "assistant", "content": example}
         ]
 
     def __getitem__(self, idx):
         example = self.dataset[idx]
-        audio_features = self._audio_to_features(example["audio"])
-        
+        audio = example["audio"]
+        text = truecase.get_true_case(example["text"]) # truecase the text
+        audio_features = self._audio_to_features(audio)
+
         # format as chat
-        conversation = self._format_chat(example)
+        conversation = self._format_chat(text)
         
         # tokenize conversation with special handling for audio token
         tokenized = self.tokenizer.apply_chat_template(
@@ -44,7 +47,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
-        
+        breakpoint()
         # find audio token position and replace with actual token ID
         audio_token_idx = (tokenized == self.audio_token_id).nonzero()
 
@@ -100,3 +103,14 @@ def collate_fn(batch):
         "audio_features": torch.stack(audio_features),
         "labels": torch.stack(labels)
     }
+
+
+if __name__ == "__main__":
+    import transformers
+    tokenizer = transformers.AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-360M-Instruct")
+    processor = AutoProcessor.from_pretrained("openai/whisper-base.en")
+    dataset = LibriSpeechChatDataset(tokenizer=tokenizer, processor=processor)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
+    for batch in dataloader:
+        print(batch)
+        breakpoint()
