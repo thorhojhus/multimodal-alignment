@@ -2,7 +2,6 @@ import transformers
 import torch
 from torch import nn
 from dataclasses import dataclass
-from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 @dataclass
 class AudioLLMConfig:
@@ -41,7 +40,7 @@ class AudioLLMModel(nn.Module):
         self.downsample_factor = config.downsample_factor
 
     def create_lm(self, config: AudioLLMConfig):
-        lm = AutoLigerKernelForCausalLM.from_pretrained(
+        lm = transformers.AutoModelForCausalLM.from_pretrained(
             config.lm_model_name, 
             attn_implementation="flash_attention_2", 
             torch_dtype=torch.bfloat16, 
@@ -62,7 +61,11 @@ class AudioLLMModel(nn.Module):
         for param in encoder.parameters():
             param.requires_grad = False
         return encoder
-
+    
+    def apply_liger_kernel(self):
+        from liger_kernel.transformers import _apply_liger_kernel_to_instance
+        _apply_liger_kernel_to_instance(self.lm)
+        
     def add_special_token(self):
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
