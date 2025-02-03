@@ -11,3 +11,4 @@ evaluate
 librosa
 soundfile
 truecase
+hydra-core

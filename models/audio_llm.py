@@ -1,16 +1,15 @@
 import transformers
 import torch
 from torch import nn
-from torch.nn import functional as F
 from dataclasses import dataclass
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 @dataclass
 class AudioLLMConfig:
-    whisper_dim: int = 1280
-    embed_dim: int = 2048
     inter_dim: int = 4096
     downsample_factor: int = 10
+    lm_model_name: str = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+    whisper_model_name: str = "openai/whisper-large-v3-turbo"
 
 class Projector(nn.Module):
     def __init__(self, whisper_dim: int, embed_dim: int):
@@ -26,12 +25,14 @@ class Projector(nn.Module):
     
 
 class AudioLLMModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: AudioLLMConfig):
         super().__init__()
-        self.lm = self.create_lm(config)
-        self.projector = self.create_projector(config)
         self.audio_encoder = self.create_audio_encoder(config)
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-360M-Instruct")
+        self.lm = self.create_lm(config)
+        whisper_dim = self.audio_encoder.config.d_model
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        self.projector = Projector(whisper_dim, embed_dim).to("cuda", torch.bfloat16)
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(config.lm_model_name)
         self.audio_token_str = "<|audio|>"
         self.add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
@@ -39,9 +40,9 @@ class AudioLLMModel(nn.Module):
         self.audio_avg_pooler = nn.AvgPool1d(config.downsample_factor)
         self.downsample_factor = config.downsample_factor
 
-    def create_lm(self, config):
+    def create_lm(self, config: AudioLLMConfig):
         lm = AutoLigerKernelForCausalLM.from_pretrained(
-            "HuggingFaceTB/SmolLM2-1.7B-Instruct", 
+            config.lm_model_name, 
             attn_implementation="flash_attention_2", 
             torch_dtype=torch.bfloat16, 
             device_map="cuda"
@@ -50,12 +51,9 @@ class AudioLLMModel(nn.Module):
             param.requires_grad = False
         return lm
 
-    def create_projector(self, config):
-        return Projector(config.whisper_dim, config.embed_dim).to("cuda", torch.bfloat16)
-
-    def create_audio_encoder(self, config):
+    def create_audio_encoder(self, config: AudioLLMConfig):
         whisper = transformers.WhisperForConditionalGeneration.from_pretrained(
-            "openai/whisper-large-v3-turbo", 
+            config.whisper_model_name, 
             attn_implementation="flash_attention_2", 
             torch_dtype=torch.bfloat16, 
             device_map=None
@@ -166,7 +164,8 @@ if __name__ == "__main__":
     B = 2
     T = 1024
 
-    model = AudioLLMModel(AudioLLMConfig())
+    config = AudioLLMConfig()
+    model = AudioLLMModel(config)
 
     # create a dummy batch where some positions are the audio token.
     input_ids = torch.randint(0, 49152, (B, T)).to("cuda", torch.long)

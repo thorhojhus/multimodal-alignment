@@ -5,6 +5,8 @@ from models.audio_llm import AudioLLMModel, AudioLLMConfig
 from dataset.librispeech import LibriSpeechChatDataset, collate_fn
 import time
 from datetime import timedelta
+import hydra
+from omegaconf import DictConfig
 
 def count_trainable_parameters(model):
     """Count the number of trainable parameters."""
@@ -19,7 +21,7 @@ def print_parameter_count(model):
     print(f"Total parameters: \t{total_params:,}")
     print(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
 
-def train(model, dataset, num_epochs=3, batch_size=4):
+def train(model, dataset, num_epochs=3, batch_size=4, lr=5e-5, warmup_steps=50):
     # print parameter counts before training
     print_parameter_count(model)
     
@@ -28,17 +30,17 @@ def train(model, dataset, num_epochs=3, batch_size=4):
         {"params": model.lm.get_input_embeddings().parameters()},
         {"params": model.projector.parameters()}
     ]
-    optimizer = torch.optim.AdamW(trainable_params, lr=5e-5)
+    optimizer = torch.optim.AdamW(trainable_params, lr=lr)
     
     dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=True, pin_memory=True)
     
     # calculate total number of training steps
     total_steps = len(dataloader) * num_epochs
     
-    # create the scheduler
+    # create the scheduler using warmup_steps from config
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=50,
+        num_warmup_steps=warmup_steps,
         num_training_steps=total_steps
     )
     
@@ -100,16 +102,22 @@ def train(model, dataset, num_epochs=3, batch_size=4):
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
 
-if __name__ == "__main__":
+@hydra.main(version_base="1.2", config_path="configs", config_name="config")
+def main(cfg: DictConfig):
     torch.set_float32_matmul_precision('high')
-    # initialize components
-    config = AudioLLMConfig()
+    # initialize components using config values from Hydra
+    config = AudioLLMConfig(
+        inter_dim=cfg.model.inter_dim,
+        downsample_factor=cfg.model.downsample_factor,
+        lm_model_name=cfg.model.lm_model_name,
+        whisper_model_name=cfg.model.whisper_model_name
+    )
     model = AudioLLMModel(config)
     
     # create dataset and processor
-    processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo")
+    processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
     dataset = LibriSpeechChatDataset(
-        split="train.clean.360",
+        split=cfg.dataset.split,
         tokenizer=model.tokenizer,
         processor=processor
     )
@@ -120,5 +128,15 @@ if __name__ == "__main__":
     for param in model.lm.parameters():
         param.requires_grad = False
     
-    # start training
-    train(model, dataset, num_epochs=1, batch_size=16)
+    # start training using lr and warmup_steps from the config
+    train(
+        model,
+        dataset,
+        num_epochs=cfg.training.num_epochs,
+        batch_size=cfg.training.batch_size,
+        lr=cfg.training.lr,
+        warmup_steps=cfg.training.warmup_steps
+    )
+
+if __name__ == "__main__":
+    main()

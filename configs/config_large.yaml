@@ -1,0 +1,18 @@
+hydra:
+  job:
+    chdir: true
+
+model:
+  inter_dim: 4096
+  downsample_factor: 10
+  lm_model_name: "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+  whisper_model_name: "openai/whisper-large-v3-turbo"
+
+training:
+  num_epochs: 1
+  batch_size: 16
+  lr: 5e-5
+  warmup_steps: 50
+
+dataset:
+  split: "train.clean.360"
