@@ -4,15 +4,15 @@ hydra:
 
 model:
   inter_dim: 4096
-  downsample_factor: 10
+  downsample_factor: 15
   lm_model_name: "HuggingFaceTB/SmolLM2-360M-Instruct"
   whisper_model_name: "openai/whisper-base"
 
 training:
   num_epochs: 1
-  batch_size: 16
+  batch_size: 64
   lr: 3e-4
-  warmup_steps: 50
+  warmup_steps: 10
 
 dataset:
   split: "train.clean.360"

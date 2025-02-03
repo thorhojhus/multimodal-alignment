@@ -1,12 +1,17 @@
+import logging
+import time
+from datetime import timedelta
+
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
 from models.audio_llm import AudioLLMModel, AudioLLMConfig
 from dataset.librispeech import LibriSpeechChatDataset, collate_fn
-import time
-from datetime import timedelta
 import hydra
 from omegaconf import DictConfig
+from liger_kernel.transformers import _apply_liger_kernel_to_instance
+
+logger = logging.getLogger(__name__)
 
 def count_trainable_parameters(model):
     """Count the number of trainable parameters."""
@@ -16,19 +21,24 @@ def print_parameter_count(model):
     """Print trainable and total parameter counts."""
     trainable_params = count_trainable_parameters(model)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nModel Parameters:")
-    print(f"Trainable parameters: \t{trainable_params:,}")
-    print(f"Total parameters: \t{total_params:,}")
-    print(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
+    logger.info("\nModel Parameters:")
+    logger.info(f"Trainable parameters: \t{trainable_params:,}")
+    logger.info(f"Total parameters: \t{total_params:,}")
+    logger.info(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
 
 def train(model, dataset, num_epochs=3, batch_size=4, lr=5e-5, warmup_steps=50):
     # print parameter counts before training
     print_parameter_count(model)
     
-    # create optimizer only for trainable parameters
+    # build the list of trainable parameters. For audio_pos_emb, check if it is a leaf;
+    # if not, re-wrap it in nn.Parameter.
+    audio_pos_params = (model.audio_pos_emb if model.audio_pos_emb.is_leaf 
+                        else torch.nn.Parameter(model.audio_pos_emb.detach(), requires_grad=True))
+    
     trainable_params = [
-        {"params": model.lm.get_input_embeddings().parameters()},
-        {"params": model.projector.parameters()}
+        {"params": list(model.projector.parameters())},
+        {"params": list(model.learnable_downsampler.parameters())},
+        {"params": [audio_pos_params]}
     ]
     optimizer = torch.optim.AdamW(trainable_params, lr=lr)
     
@@ -79,7 +89,7 @@ def train(model, dataset, num_epochs=3, batch_size=4, lr=5e-5, warmup_steps=50):
             
             if batch_idx % 10 == 0:
                 current_lr = scheduler.get_last_lr()[0]
-                print(
+                logger.info(
                     f"Epoch {epoch+1} | "
                     f"Batch {batch_idx}/{len(dataloader)} | "
                     f"Loss: {loss.item():.4f} | "
@@ -95,7 +105,7 @@ def train(model, dataset, num_epochs=3, batch_size=4, lr=5e-5, warmup_steps=50):
         epoch_time = time.time() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
-        print(
+        logger.info(
             f"Epoch {epoch+1} Summary | "
             f"Average Loss: {avg_loss:.4f} | "
             f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
@@ -105,6 +115,9 @@ def train(model, dataset, num_epochs=3, batch_size=4, lr=5e-5, warmup_steps=50):
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):
     torch.set_float32_matmul_precision('high')
+    # log the Hydra configuration for reproducibility
+    logger.info("Hydra Config:\n" + str(cfg))
+    
     # initialize components using config values from Hydra
     config = AudioLLMConfig(
         inter_dim=cfg.model.inter_dim,
@@ -113,6 +126,8 @@ def main(cfg: DictConfig):
         whisper_model_name=cfg.model.whisper_model_name
     )
     model = AudioLLMModel(config)
+    
+    model.apply_liger_kernel()
     
     # create dataset and processor
     processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
@@ -128,7 +143,6 @@ def main(cfg: DictConfig):
     for param in model.lm.parameters():
         param.requires_grad = False
     
-    # start training using lr and warmup_steps from the config
     train(
         model,
         dataset,

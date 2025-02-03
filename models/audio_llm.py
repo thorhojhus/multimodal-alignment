@@ -2,14 +2,36 @@ import transformers
 import torch
 from torch import nn
 from dataclasses import dataclass
-from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 @dataclass
 class AudioLLMConfig:
     inter_dim: int = 4096
     downsample_factor: int = 10
-    lm_model_name: str = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
-    whisper_model_name: str = "openai/whisper-large-v3-turbo"
+    lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
+    whisper_model_name: str = "openai/whisper-base"
+
+class LearnableDownsampler(nn.Module):
+    def __init__(self, downsample_factor: int, embed_dim: int):
+        super().__init__()
+        self.downsample_factor = downsample_factor
+        self.embed_dim = embed_dim
+        self.linear = nn.Linear(downsample_factor * embed_dim, embed_dim)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (B, L, embed_dim)
+        B, L, D = x.shape
+        # pad if L is not divisible by downsample_factor
+        if L % self.downsample_factor != 0:
+            pad_size = self.downsample_factor - (L % self.downsample_factor)
+            padding = x.new_zeros(B, pad_size, D)
+            x = torch.cat([x, padding], dim=1)
+            L = x.shape[1]
+        new_L = L // self.downsample_factor
+        # reshape into groups of size downsample_factor
+        x = x.view(B, new_L, self.downsample_factor * D)
+        # project each group to embed_dim
+        x = self.linear(x)
+        return x
 
 class Projector(nn.Module):
     def __init__(self, whisper_dim: int, embed_dim: int):
@@ -22,7 +44,6 @@ class Projector(nn.Module):
         hidden_states = self.relu(self.linear1(audio_features))
         hidden_states = self.linear2(hidden_states)
         return hidden_states
-    
 
 class AudioLLMModel(nn.Module):
     def __init__(self, config: AudioLLMConfig):
@@ -37,11 +58,13 @@ class AudioLLMModel(nn.Module):
         self.add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
         self.pad_token_id = self.tokenizer.pad_token_id
-        self.audio_avg_pooler = nn.AvgPool1d(config.downsample_factor)
-        self.downsample_factor = config.downsample_factor
+        
+        self.learnable_downsampler = LearnableDownsampler(config.downsample_factor, embed_dim).to("cuda", torch.bfloat16)
+        self.audio_pos_emb = nn.Parameter(torch.zeros(1000, embed_dim)).to("cuda", torch.bfloat16)
+        nn.init.trunc_normal_(self.audio_pos_emb, std=0.02)
 
     def create_lm(self, config: AudioLLMConfig):
-        lm = AutoLigerKernelForCausalLM.from_pretrained(
+        lm = transformers.AutoModelForCausalLM.from_pretrained(
             config.lm_model_name, 
             attn_implementation="flash_attention_2", 
             torch_dtype=torch.bfloat16, 
@@ -50,6 +73,10 @@ class AudioLLMModel(nn.Module):
         for param in lm.parameters():
             param.requires_grad = False
         return lm
+    
+    def apply_liger_kernel(self):
+        from liger_kernel.transformers import _apply_liger_kernel_to_instance
+        _apply_liger_kernel_to_instance(self.lm)
 
     def create_audio_encoder(self, config: AudioLLMConfig):
         whisper = transformers.WhisperForConditionalGeneration.from_pretrained(
@@ -102,24 +129,24 @@ class AudioLLMModel(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, audio_features: torch.Tensor, 
                 attention_mask: torch.Tensor = None, labels: torch.Tensor = None):
-        # process audio features.
+        # Process audio features.
         with torch.no_grad():
             audio_encoded = self.audio_encoder(audio_features).last_hidden_state
         audio_embeds = self.projector(audio_encoded)
-        # downsample over time (using the entire length of audio_embeds after avg pool)
-        audio_embeds = audio_embeds.transpose(1, 2)
-        audio_embeds = self.audio_avg_pooler(audio_embeds)
-        audio_embeds = audio_embeds.transpose(1, 2)  # (B, D, embed_dim)
-        B, D, _ = audio_embeds.shape
-
+        # audio_embeds shape: (B, L, embed_dim)
+        audio_embeds = self.learnable_downsampler(audio_embeds)  # now shape (B, L_ds, embed_dim)
+        B, L_ds, _ = audio_embeds.shape
+        # learnable positional embeddings to the audio tokens.
+        audio_embeds = audio_embeds + self.audio_pos_emb[:L_ds, :].unsqueeze(0)
+        
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if labels is None:
             labels = input_ids.clone()
-        # mask out pad tokens in labels.
+        # mask out pad tokens in labels
         labels.masked_fill_(labels == self.pad_token_id, -100)
 
-        # use the audio token only to get the insertion index, then remove it from the tokens.
+        # remove the audio token placeholder and record insertion indices.
         new_input_ids, new_attention_mask, new_labels, insertion_indices = self.adjust_masks_and_labels(
             input_ids, attention_mask, labels
         )
@@ -132,17 +159,17 @@ class AudioLLMModel(nn.Module):
         combined_labels_list = []
         combined_attention_mask_list = []
         for i in range(B):
-            embeds = text_embeds[i]    # shape (L, hidden)
-            lbls = new_labels[i]       # shape (L,)
-            att_mask = new_attention_mask[i]  # shape (L,)
+            embeds = text_embeds[i]    # shape (L_text, embed_dim)
+            lbls = new_labels[i]       # shape (L_text,)
+            att_mask = new_attention_mask[i]  # shape (L_text,)
             if insertion_indices[i].numel() > 0:
                 idx = insertion_indices[i][0].item()
                 combined_embeds = torch.cat([embeds[:idx], audio_embeds[i], embeds[idx:]], dim=0)
                 # mark the inserted audio positions with -100 in the labels.
-                audio_labels = torch.full((D,), -100, dtype=lbls.dtype, device=lbls.device)
+                audio_labels = torch.full((L_ds,), -100, dtype=lbls.dtype, device=lbls.device)
                 combined_labels = torch.cat([lbls[:idx], audio_labels, lbls[idx:]], dim=0)
                 # set the attention mask for the audio embeddings to 1.
-                audio_mask_tokens = torch.ones(D, dtype=att_mask.dtype, device=att_mask.device)
+                audio_mask_tokens = torch.ones(L_ds, dtype=att_mask.dtype, device=att_mask.device)
                 combined_att_mask = torch.cat([att_mask[:idx], audio_mask_tokens, att_mask[idx:]], dim=0)
             else:
                 combined_embeds = embeds
@@ -156,7 +183,6 @@ class AudioLLMModel(nn.Module):
         combined_embeds = torch.nn.utils.rnn.pad_sequence(combined_embeds_list, batch_first=True, padding_value=0)
         combined_labels = torch.nn.utils.rnn.pad_sequence(combined_labels_list, batch_first=True, padding_value=-100)
         combined_attention_mask = torch.nn.utils.rnn.pad_sequence(combined_attention_mask_list, batch_first=True, padding_value=0)
-
         outputs = self.lm(inputs_embeds=combined_embeds, attention_mask=combined_attention_mask, labels=combined_labels)
         return outputs
 
