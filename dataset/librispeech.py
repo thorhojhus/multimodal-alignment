@@ -2,6 +2,7 @@ import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
 import aiohttp # needed to get around timeout bug in librispeech_asr
+from truecase import get_true_case
 
 class LibriSpeechChatDataset(torch.utils.data.Dataset):
     def __init__(self, split="train.clean.100", tokenizer=None, processor=None):
@@ -27,8 +28,8 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
     def _format_chat(self, example):
         return [
-            {"role": "user", "content": f"Transcribe {self.audio_token}"},
-            {"role": "assistant", "content": example}
+            {"role": "user", "content": f"Repeat the following: {self.audio_token}"},
+            {"role": "assistant", "content": get_true_case(example)}
         ]
 
     def __getitem__(self, idx):
