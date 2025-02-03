@@ -233,9 +233,9 @@ class AudioLLMModel(nn.Module):
         audio_embeds = self.projector(audio_encoded)
         
         # downsample audio embeddings
-        audio_embeds = audio_embeds.transpose(1, 2)
+        #audio_embeds = audio_embeds.transpose(1, 2)
         audio_embeds = self.audio_avg_pooler(audio_embeds)
-        audio_embeds = audio_embeds.transpose(1, 2)  # (B, D, embed_dim)
+        #audio_embeds = audio_embeds.transpose(1, 2)  # (B, D, embed_dim)
         B, D, _ = audio_embeds.shape
 
         if attention_mask is None:
