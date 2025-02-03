@@ -163,8 +163,7 @@ def train(model, dataset, cfg):
     print_parameter_count(model)
         
     trainable_params = [
-        {"params": list(model.projector.parameters()),
-         "params": list(model.audio_avg_pooler.parameters()),},
+        {"params": list(model.projector.parameters())},
     ]
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     

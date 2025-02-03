@@ -11,39 +11,39 @@ class AudioLLMConfig:
     whisper_model_name: str = "openai/whisper-large-v3-turbo"
 
 class Projector(nn.Module):
-    def __init__(self, whisper_dim: int, embed_dim: int):
-        super().__init__()
-        self.linear1 = nn.Linear(in_features=whisper_dim, out_features=embed_dim, bias=False)
-        self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(in_features=embed_dim, out_features=embed_dim, bias=False)
-        
-    def forward(self, audio_features: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.relu(self.linear1(audio_features))
-        hidden_states = self.linear2(hidden_states)
-        return hidden_states
-
-class LearnableDownsampler(nn.Module):
-    def __init__(self, downsample_factor: int, embed_dim: int):
+    def __init__(self, whisper_dim: int, embed_dim: int, downsample_factor: int):
         super().__init__()
         self.downsample_factor = downsample_factor
-        self.embed_dim = embed_dim
-        self.linear = nn.Linear(downsample_factor * embed_dim, embed_dim)
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x shape: (B, L, embed_dim)
-        B, L, D = x.shape
-        # pad if L is not divisible by downsample_factor
+        
+        # Initial projection from whisper dimensions
+        self.linear1 = nn.Linear(in_features=whisper_dim, out_features=embed_dim, bias=False)
+        self.relu = nn.ReLU()
+        
+        # Combined downsampling and final projection
+        self.downsample_proj = nn.Linear(downsample_factor * embed_dim, embed_dim, bias=False)
+        
+    def forward(self, audio_features: torch.Tensor) -> torch.Tensor:
+        # Initial projection
+        hidden_states = self.relu(self.linear1(audio_features))
+        
+        # Prepare for downsampling
+        B, L, D = hidden_states.shape
+        
+        # Pad if sequence length is not divisible by downsample_factor
         if L % self.downsample_factor != 0:
             pad_size = self.downsample_factor - (L % self.downsample_factor)
-            padding = x.new_zeros(B, pad_size, D)
-            x = torch.cat([x, padding], dim=1)
-            L = x.shape[1]
+            padding = hidden_states.new_zeros(B, pad_size, D)
+            hidden_states = torch.cat([hidden_states, padding], dim=1)
+            L = hidden_states.shape[1]
+            
+        # Reshape and downsample
         new_L = L // self.downsample_factor
-        # reshape into groups of size downsample_factor
-        x = x.view(B, new_L, self.downsample_factor * D)
-        # project each group to embed_dim
-        x = self.linear(x)
-        return x
+        hidden_states = hidden_states.view(B, new_L, self.downsample_factor * D)
+        
+        # Final projection
+        output = self.downsample_proj(hidden_states)
+        
+        return output
 
 class AudioLLMModel(nn.Module):
     def __init__(self, config: AudioLLMConfig):
@@ -52,14 +52,13 @@ class AudioLLMModel(nn.Module):
         self.lm = self.create_lm(config)
         whisper_dim = self.audio_encoder.config.d_model
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-        self.projector = Projector(whisper_dim, embed_dim).to("cuda", torch.bfloat16)
+        self.projector = Projector(whisper_dim, embed_dim, config.downsample_factor).to("cuda", torch.bfloat16)
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(config.lm_model_name)
         self.audio_token_str = "<|audio|>"
         self.add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
         self.pad_token_id = self.tokenizer.pad_token_id
         #self.audio_avg_pooler = nn.AvgPool1d(config.downsample_factor)
-        self.audio_avg_pooler = LearnableDownsampler(config.downsample_factor, embed_dim).to("cuda", torch.bfloat16)
         self.downsample_factor = config.downsample_factor
 
     def create_lm(self, config: AudioLLMConfig):
@@ -154,7 +153,7 @@ class AudioLLMModel(nn.Module):
         audio_embeds = self.projector(audio_encoded)
         # downsample over time (using the entire length of audio_embeds after avg pool)
         #audio_embeds = audio_embeds.transpose(1, 2)
-        audio_embeds = self.audio_avg_pooler(audio_embeds)
+        #audio_embeds = self.audio_avg_pooler(audio_embeds)
         #audio_embeds = audio_embeds.transpose(1, 2)  # (B, D, embed_dim)
         B, D, _ = audio_embeds.shape
 
@@ -234,7 +233,7 @@ class AudioLLMModel(nn.Module):
         
         # downsample audio embeddings
         #audio_embeds = audio_embeds.transpose(1, 2)
-        audio_embeds = self.audio_avg_pooler(audio_embeds)
+        #audio_embeds = self.audio_avg_pooler(audio_embeds)
         #audio_embeds = audio_embeds.transpose(1, 2)  # (B, D, embed_dim)
         B, D, _ = audio_embeds.shape
 
