@@ -175,19 +175,6 @@ class AudioLLMModel(nn.Module):
         if attention_mask_list:
             combined_attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
             
-            # adjust attention mask based on trailing -100s in labels
-            if combined_labels is not None:
-                for i in range(combined_labels.shape[0]):
-                    # find the positions of trailing -100s
-                    trailing_mask = torch.flip(combined_labels[i] == -100, [0])
-                    # find the first False (non -100) position from the end
-                    try:
-                        first_non_trailing = torch.where(~trailing_mask)[0][0].item()
-                        # set attention mask to 0 for trailing -100s, but don't include the position of last non-100
-                        if first_non_trailing > 0:  # only mask if there are actual trailing -100s
-                            combined_attention_mask[i, -first_non_trailing:] = 0
-                    except IndexError:
-                        pass
             
         return combined_embeds, combined_labels, combined_attention_mask
     
