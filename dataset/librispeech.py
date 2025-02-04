@@ -81,8 +81,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
         # mask non-response parts
         labels[:response_start] = -100
-        labels[response_end:] = -100
-
+        
         return labels
 
 def collate_fn(batch):
