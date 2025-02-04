@@ -56,7 +56,7 @@ class AudioLLMModel(nn.Module):
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
         self.pad_token_id = self.tokenizer.pad_token_id
 
-    def _create_audio_encoder(self) -> nn.Module:
+    def _create_audio_encoder(self) -> WhisperModel:
         # initialize whisper encoder with flash attention (only encoder to GPU)
         whisper = WhisperModel.from_pretrained(
             self.config.whisper_model_name,
@@ -82,7 +82,7 @@ class AudioLLMModel(nn.Module):
             param.requires_grad = False
         return lm
 
-    def _create_projector(self) -> nn.Module:
+    def _create_projector(self) -> Projector:
         # get dimensions for projector
         whisper_dim = self.audio_encoder.config.d_model
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
