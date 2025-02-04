@@ -175,8 +175,22 @@ class AudioLLMModel(nn.Module):
         if attention_mask_list:
             combined_attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
             
+            # adjust attention mask based on trailing -100s in labels
+            if combined_labels is not None:
+                for i in range(combined_labels.shape[0]):
+                    # find the positions of trailing -100s
+                    trailing_mask = torch.flip(combined_labels[i] == -100, [0])
+                    # find the first False (non -100) position from the end
+                    try:
+                        first_non_trailing = torch.where(~trailing_mask)[0][0].item()
+                        # set attention mask to 0 for trailing -100s, but don't include the position of last non-100
+                        if first_non_trailing > 0:  # only mask if there are actual trailing -100s
+                            combined_attention_mask[i, -first_non_trailing:] = 0
+                    except IndexError:
+                        pass
+            
         return combined_embeds, combined_labels, combined_attention_mask
-
+    
     def save_projector(self, save_path: str) -> None:
         # save only the projector weights
         torch.save(self.projector.state_dict(), save_path)
@@ -194,10 +208,6 @@ class AudioLLMModel(nn.Module):
         if labels is None:
             labels = input_ids.clone()
 
-        # only mask pad tokens (EOS tokens at positions where attention_mask is 0)
-        pad_positions = (attention_mask == 0) & (input_ids == self.pad_token_id)
-        labels = labels.masked_fill(pad_positions, -100)
-
         audio_positions = self._get_audio_positions(input_ids)
         insertion_indices = self._adjust_insertion_indices(audio_positions)
         valid_positions = self._get_valid_positions(input_ids)
@@ -210,7 +220,6 @@ class AudioLLMModel(nn.Module):
         new_input_ids = torch.nn.utils.rnn.pad_sequence(new_input_ids, batch_first=True, padding_value=self.pad_token_id)
         new_labels = torch.nn.utils.rnn.pad_sequence(new_labels, batch_first=True, padding_value=-100)
         new_attention_mask = torch.nn.utils.rnn.pad_sequence(new_attention_mask, batch_first=True, padding_value=0)
-
         return new_input_ids, new_attention_mask, new_labels, insertion_indices
 
     def forward(
@@ -231,7 +240,6 @@ class AudioLLMModel(nn.Module):
             text_embeds, audio_embeds, insertion_indices, new_labels, new_attention_mask
         )
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
-
         # forward pass through language model
         return self.lm(
             inputs_embeds=combined_embeds,

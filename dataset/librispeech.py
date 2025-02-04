@@ -81,7 +81,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
         # mask non-response parts
         labels[:response_start] = -100
-        
+
         return labels
 
 def collate_fn(batch):
@@ -92,7 +92,7 @@ def collate_fn(batch):
     
     # find max audio length and round up to nearest multiple of 128
     max_audio_len = max(item["audio_features"].size(1) for item in batch)
-    max_audio_len = ((max_audio_len + 127) // 128) * 128  # round up to nearest multiple of 128
+    max_audio_len = min(((max_audio_len + 127) // 128) * 128, 3000)  # round up to nearest multiple of 128 and cap at 3000
     
     audio_features = []
     
@@ -102,16 +102,20 @@ def collate_fn(batch):
         input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=0))
         labels.append(torch.nn.functional.pad(item["labels"], (0, pad_len), value=-100))
         
-        # pad audio features
+        # truncate and pad audio features
         audio_feat = item["audio_features"]  # Shape: [80, T]
+        if audio_feat.size(1) > max_audio_len:
+            audio_feat = audio_feat[:, :max_audio_len]  # truncate if longer than max_audio_len
+        
         audio_pad_len = max_audio_len - audio_feat.size(1)
         # pad on the time dimension (dim=1)
         padded_audio = torch.nn.functional.pad(audio_feat, (0, audio_pad_len), value=0)
         audio_features.append(padded_audio)
-    
+    audio_features = torch.stack(audio_features)[:,:,:3000] # just to be sure
+
     return {
         "input_ids": torch.stack(input_ids),
-        "audio_features": torch.stack(audio_features),  # will now be shape [B, 80, T] where T is multiple of 128
+        "audio_features": audio_features,
         "labels": torch.stack(labels)
     }
 
@@ -123,3 +127,4 @@ if __name__ == "__main__":
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
     for batch in dataloader:
         print(batch)
+        break
