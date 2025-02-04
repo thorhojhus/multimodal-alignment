@@ -111,10 +111,11 @@ def collate_fn(batch):
         # pad on the time dimension (dim=1)
         padded_audio = torch.nn.functional.pad(audio_feat, (0, audio_pad_len), value=0)
         audio_features.append(padded_audio)
-    
+    audio_features = torch.stack(audio_features)[:,:,:3000] # just to be sure
+
     return {
         "input_ids": torch.stack(input_ids),
-        "audio_features": torch.stack(audio_features),  # will now be shape [B, 80, T] where T is multiple of 128 and <= 3000
+        "audio_features": audio_features,
         "labels": torch.stack(labels)
     }
 
@@ -126,3 +127,4 @@ if __name__ == "__main__":
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
     for batch in dataloader:
         print(batch)
+        break
