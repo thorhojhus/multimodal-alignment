@@ -193,7 +193,10 @@ class AudioLLMModel(nn.Module):
             attention_mask = torch.ones_like(input_ids)
         if labels is None:
             labels = input_ids.clone()
-        labels = labels.masked_fill(labels == self.pad_token_id, -100)
+
+        # only mask pad tokens (EOS tokens at positions where attention_mask is 0)
+        pad_positions = (attention_mask == 0) & (input_ids == self.pad_token_id)
+        labels = labels.masked_fill(pad_positions, -100)
 
         audio_positions = self._get_audio_positions(input_ids)
         insertion_indices = self._adjust_insertion_indices(audio_positions)
