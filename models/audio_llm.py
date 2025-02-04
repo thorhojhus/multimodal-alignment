@@ -1,4 +1,5 @@
 import transformers
+from models.whisper_modified import WhisperModel
 import torch
 from torch import nn, Tensor
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 @dataclass
 class AudioLLMConfig:
-    downsample_factor: int = 10
+    downsample_factor: int = 8
     lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
     whisper_model_name: str = "openai/whisper-base"
 
@@ -57,7 +58,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_audio_encoder(self) -> nn.Module:
         # initialize whisper encoder with flash attention (only encoder to GPU)
-        whisper = transformers.WhisperModel.from_pretrained(
+        whisper = WhisperModel.from_pretrained(
             self.config.whisper_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
@@ -282,12 +283,12 @@ if __name__ == "__main__":
     input_ids[0, 1] = model.audio_token_id
     input_ids[1, 2] = model.audio_token_id
     
-    audio_features = torch.randn(B, 80, 3000).to("cuda", torch.bfloat16)
+    audio_features = torch.randn(B, 80, 1500).to("cuda", torch.bfloat16)
     attention_mask = torch.ones(B, T, device="cuda", dtype=torch.int64)
     labels = input_ids.clone()
 
     outs = model.forward(input_ids, audio_features, attention_mask, labels)
-    gens = model.generate(input_ids, audio_features, attention_mask, max_new_tokens=100)
+    #gens = model.generate(input_ids, audio_features, attention_mask, max_new_tokens=100)
 
     print(outs)
-    print(gens)
+    #print(gens)

@@ -120,9 +120,10 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     
     # log results
     for i in range(len(outputs)):
-        generated_text = tokenizer.decode(outputs[i][len(user_prompts[i]):], skip_special_tokens=True)
+        generated_text = tokenizer.decode(outputs[i][len(user_prompts[i]):], skip_special_tokens=False)
         
         logger.info("\nEvaluation Sample %d:", i + 1)
+        logger.info("User prompt: %s", tokenizer.decode(user_prompts[i], skip_special_tokens=False))
         logger.info("Ground truth: %s", ground_truths[i])
         logger.info("Generated: %s", generated_text)
         logger.info("-" * 50)
