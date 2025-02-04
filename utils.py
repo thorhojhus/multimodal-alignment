@@ -25,6 +25,10 @@ def save_checkpoint(
         save_dir: str,
         logger: logging.Logger
 ) -> None:
+    """Save the checkpoints for specified models (LIST), optimizer and scheduler.
+    
+    The checkpoint savefile is saved based on the step parameter.
+    """
     checkpoint = {
         'global_step': global_step,
         'loss': loss,
@@ -49,6 +53,7 @@ def load_checkpoint(
     checkpoint_path: str,
     logger: logging.Logger
 ) -> tuple:
+    "Load the checkpoint for specified models (LIST), optimizer and scheduler."
     logger.info(f"Loading checkpoint from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     
