@@ -16,14 +16,23 @@ def print_parameter_count(model: torch.nn.Module, logger: logging.Logger) -> Non
     logger.info(f"Total parameters: \t{total_params:,}")
     logger.info(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
 
-def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, scheduler: torch.optim.lr_scheduler._LRScheduler, global_step: int, loss: float, save_dir: str, logger: logging.Logger) -> None:
+def save_checkpoint(
+        models: list[torch.nn.Module],
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler._LRScheduler,
+        global_step: int,
+        loss: float,
+        save_dir: str,
+        logger: logging.Logger
+) -> None:
     checkpoint = {
         'global_step': global_step,
         'loss': loss,
-        'projector_state': model.projector.state_dict(),
         'optimizer_state': optimizer.state_dict(),
         'scheduler_state': scheduler.state_dict()
     }
+
+    checkpoint |= {model._get_name(): model.state_dict() for model in models}
     
     checkpoint_path = os.path.join(save_dir, f'checkpoint_step_{global_step}.pt')
     torch.save(checkpoint, checkpoint_path)
@@ -33,11 +42,18 @@ def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, sc
     latest_path = os.path.join(save_dir, 'checkpoint_latest.pt')
     torch.save(checkpoint, latest_path)
 
-def load_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, scheduler: torch.optim.lr_scheduler._LRScheduler, checkpoint_path: str, logger: logging.Logger) -> tuple:
+def load_checkpoint(
+    models: list[torch.nn.Module],
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    checkpoint_path: str,
+    logger: logging.Logger
+) -> tuple:
     logger.info(f"Loading checkpoint from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     
-    model.projector.load_state_dict(checkpoint['projector_state'])
+    for model in models:
+        model.load_state_dict(checkpoint[model._get_name()])
     optimizer.load_state_dict(checkpoint['optimizer_state'])
     scheduler.load_state_dict(checkpoint['scheduler_state'])
     
