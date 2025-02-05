@@ -81,7 +81,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
         # get the last BOS token (start of assistant response)
         last_bos = bos_positions[-1].item()
-        response_start = last_bos + 1
+        response_start = last_bos
 
         # find the first EOS after last BOS (end of assistant response)
         eos_after_bos = eos_positions[eos_positions > last_bos]
@@ -89,7 +89,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
         # mask non-response parts
         labels[:response_start] = -100
-
+        labels[response_end:] = -100
         return labels
 
 def collate_fn(batch):
