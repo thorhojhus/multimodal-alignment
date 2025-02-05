@@ -121,7 +121,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                     run_evaluation(model, test_dataset, model.tokenizer, logger)
             
             # reset batch timer
-            batch_start_time = time.time()
+            batch_start_time = time.monotonic()
         
         # calculate epoch statistics
         avg_loss = total_loss / len(dataloader)

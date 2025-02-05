@@ -58,7 +58,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_audio_encoder(self) -> WhisperModel:
         # initialize whisper encoder with flash attention (only encoder to GPU)
-        whisper = WhisperModel.from_pretrained(
+        whisper = transformers.WhisperModel.from_pretrained(
             self.config.whisper_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
