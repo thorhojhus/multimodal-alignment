@@ -27,7 +27,7 @@ def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, sc
     
     checkpoint_path = os.path.join(save_dir, f'checkpoint_step_{global_step}.pt')
     torch.save(checkpoint, checkpoint_path)
-    logger.info(f"Saved checkpoint to {checkpoint_path}")
+    logger.info(f"Saved checkpoint to {os.path.abspath(checkpoint_path)}")
     
     # Save latest checkpoint separately for easy loading
     latest_path = os.path.join(save_dir, 'checkpoint_latest.pt')

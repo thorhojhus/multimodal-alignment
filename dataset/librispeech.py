@@ -2,7 +2,7 @@ import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
 import aiohttp # needed to get around timeout bug in librispeech_asr
-from truecase import get_true_case     
+from truecase import get_true_case
 
 class LibriSpeechChatDataset(torch.utils.data.Dataset):
     def __init__(self, split="train.clean.100", tokenizer=None, processor=None):
@@ -31,8 +31,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
             audio, 
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
-            truncation=True,
-            max_length=audio.size
+            truncation=True
         )
         return inputs.input_features[0]
 
@@ -89,19 +88,14 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
 
         # mask non-response parts
         labels[:response_start] = -100
+        labels[response_end:] = -100
 
         return labels
 
 def collate_fn(batch):
-    # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     input_ids = []
     labels = []
-    
-    # find max audio length and round up to nearest multiple of 128
-    max_audio_len = max(item["audio_features"].size(1) for item in batch)
-    max_audio_len = min(((max_audio_len + 127) // 128) * 128, 3000)  # round up to nearest multiple of 128 and cap at 3000
-    
     audio_features = []
     
     for item in batch:
@@ -110,22 +104,15 @@ def collate_fn(batch):
         input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=0))
         labels.append(torch.nn.functional.pad(item["labels"], (0, pad_len), value=-100))
         
-        # truncate and pad audio features
-        audio_feat = item["audio_features"]  # Shape: [80, T]
-        if audio_feat.size(1) > max_audio_len:
-            audio_feat = audio_feat[:, :max_audio_len]  # truncate if longer than max_audio_len
-        
-        audio_pad_len = max_audio_len - audio_feat.size(1)
-        # pad on the time dimension (dim=1)
-        padded_audio = torch.nn.functional.pad(audio_feat, (0, audio_pad_len), value=0)
-        audio_features.append(padded_audio)
-    audio_features = torch.stack(audio_features)[:,:,:3000] # just to be sure
-
+        # audio features
+        audio_features.append(item["audio_features"])
+    
     return {
         "input_ids": torch.stack(input_ids),
-        "audio_features": audio_features,
+        "audio_features": torch.stack(audio_features),
         "labels": torch.stack(labels)
     }
+
 
 if __name__ == "__main__":
     import transformers

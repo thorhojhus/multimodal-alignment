@@ -58,7 +58,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_audio_encoder(self) -> WhisperModel:
         # initialize whisper encoder with flash attention (only encoder to GPU)
-        whisper = WhisperModel.from_pretrained(
+        whisper = transformers.WhisperModel.from_pretrained(
             self.config.whisper_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
@@ -88,7 +88,7 @@ class AudioLLMModel(nn.Module):
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return Projector(whisper_dim, embed_dim, self.config.downsample_factor).to("cuda", torch.bfloat16)
 
-    def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
+    def _setup_tokenizer(self) -> transformers.AutoTokenizer:
         # initialize tokenizer from language model
         return transformers.AutoTokenizer.from_pretrained(self.config.lm_model_name)
 
