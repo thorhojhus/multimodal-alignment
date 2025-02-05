@@ -56,7 +56,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
     global_step = 0
     if cfg.training.resume_from_checkpoint:
         global_step, _ = load_checkpoint(
-            [model], optimizer, scheduler,
+            [model.projector], optimizer, scheduler,
             cfg.training.resume_checkpoint_path, logger
         )
         logger.info(f"Resuming training from step {global_step}")
@@ -109,7 +109,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             # Save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
                 save_checkpoint(
-                    [model], optimizer, scheduler,
+                    [model.projector], optimizer, scheduler,
                     global_step, loss.item(), 
                     cfg.training.checkpoint_dir, logger
                 )
