@@ -64,8 +64,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
     for epoch in range(cfg.training.num_epochs):
         model.train()
         total_loss = 0
-        epoch_start_time = time.time()
-        batch_start_time = time.time()
+        epoch_start_time = time.monotonic()
+        batch_start_time = time.monotonic()
         
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
@@ -93,7 +93,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             global_step += 1
             
             # calculate batch time
-            batch_time = time.time() - batch_start_time
+            batch_time = time.monotonic() - batch_start_time
             
             if global_step % cfg.training.log_every_n_steps == 0:
                 current_lr = scheduler.get_last_lr()[0]
