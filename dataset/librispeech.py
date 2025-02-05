@@ -2,7 +2,7 @@ import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
 import aiohttp # needed to get around timeout bug in librispeech_asr
-from truecase import get_true_case
+from truecase import get_true_case     
 
 class LibriSpeechChatDataset(torch.utils.data.Dataset):
     def __init__(self, split="train.clean.100", tokenizer=None, processor=None):
@@ -12,7 +12,15 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
 
-        
+    ### NOTE: this is a pretty gnarly way to do it
+    ### Should probably be done in another way;
+    try:
+        get_true_case("Any lookup erros?")
+    except LookupError:
+        import nltk
+        nltk.download("punkt_tab")
+        get_true_case("Any lookup erros?")
+
     def __len__(self):
         return len(self.dataset)
 
