@@ -12,3 +12,4 @@ librosa
 soundfile
 truecase
 hydra-core
+wandb

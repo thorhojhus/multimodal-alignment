@@ -54,6 +54,7 @@ class AudioLLMModel(nn.Module):
         self.audio_token_str = "<|audio|>"
         self._add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
+        self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
     def _create_audio_encoder(self) -> WhisperModel:
