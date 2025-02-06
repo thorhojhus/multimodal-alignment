@@ -72,7 +72,7 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     model.eval()
     test_loader = DataLoader(
         test_dataset,
-        batch_size=2,
+        batch_size=1,
         collate_fn=collate_fn,
         shuffle=True
     )

@@ -5,12 +5,14 @@ import aiohttp # needed to get around timeout bug in librispeech_asr
 from truecase import get_true_case     
 
 class LibriSpeechChatDataset(torch.utils.data.Dataset):
-    def __init__(self, split="train.clean.100", tokenizer=None, processor=None):
+    def __init__(self, split="train.clean.100", tokenizer=None, processor=None, n_examples=5):
         self.dataset = load_dataset("librispeech_asr", split=split, trust_remote_code=True, storage_options={'client_kwargs': {'timeout': aiohttp.ClientTimeout(total=3600)}})
         self.tokenizer = tokenizer
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
+        self.n_examples = n_examples
+
 
     ### NOTE: this is a pretty gnarly way to do it
     ### Should probably be done in another way;
@@ -32,35 +34,44 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
             truncation=True,
-            #max_length=audio.size
         )
         return inputs.input_features[0]
 
-    def _format_chat(self, example):
+    def _format_chat(self, examples):
         return [
-            {"role": "user", "content": f"Repeat the following: {self.audio_token}"},
-            {"role": "assistant", "content": get_true_case(example)}
+            message
+            for example in examples
+            for message in [
+                {"role": "user", "content": f"Repeat the following: {self.audio_token}"},
+                {"role": "assistant", "content": get_true_case(example)}
+            ]
         ]
 
     def __getitem__(self, idx):
-        example = self.dataset[idx]
-        audio = example["audio"]
-        text = example["text"].lower().strip()
-        audio_features = self._audio_to_features(audio)
+        # calculate start and end indices for the examples
+        start_idx = idx * self.n_examples
+        end_idx = min(start_idx + self.n_examples, len(self.dataset))
+        
+        # get multiple examples
+        examples = [self.dataset[i] for i in range(start_idx, end_idx)]
+        
+        # process audio from first example only 
+        audio_samples = [example["audio"] for example in examples]
+        audio_features = [self._audio_to_features(audio) for audio in audio_samples]
+        
+        # get texts from all examples
+        texts = [example["text"].lower().strip() for example in examples]
 
         # format as chat
-        conversation = self._format_chat(text)
-        
-        # tokenize conversation with special handling for audio token
+        conversation = self._format_chat(texts)
+        # rest remains the same
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
 
-        # find audio token position and replace with actual token ID
         audio_token_idx = (tokenized == self.audio_token_id).nonzero()
-
         tokenized[audio_token_idx] = self.audio_token_id
         
         return {
@@ -68,29 +79,42 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
             "audio_features": audio_features,
             "labels": self._create_labels(tokenized, conversation)
         }
-
+    
     def _create_labels(self, tokenized, conversation):
-        # mask all tokens except assistant response
+        assistant_responses = [message for message in conversation if message["role"] == "assistant"]
+        assistant_responses = [self.tokenizer.apply_chat_template([response], add_generation_prompt=False, return_tensors="pt")[0] for response in assistant_responses]
+        assistant_responses_list = []
+        for response in assistant_responses:
+            bos_tokens = (response == self.tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
+            # split at the last BOS token
+            last_bos = bos_tokens[-1].item()
+            response = response[last_bos:]
+            assistant_responses_list.append(response)
+
+        # Start with all tokens masked
         labels = tokenized.clone()
-        bos_token_id = self.tokenizer.bos_token_id
-        eos_token_id = self.tokenizer.eos_token_id
-
-        # find all BOS and EOS positions
-        bos_positions = (tokenized == bos_token_id).nonzero(as_tuple=True)[0]
-        eos_positions = (tokenized == eos_token_id).nonzero(as_tuple=True)[0]
-
-        # get the last BOS token (start of assistant response)
-        last_bos = bos_positions[-1].item()
-        response_start = last_bos
-
-        # find the first EOS after last BOS (end of assistant response)
-        eos_after_bos = eos_positions[eos_positions > last_bos]
-        response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(tokenized)
-
-        # mask non-response parts
-        labels[:response_start] = -100
-        labels[response_end:] = -100
+        labels.fill_(-100)
+        
+        # Find and unmask the assistant responses in the full conversation
+        current_pos = 0
+        for response in assistant_responses_list:
+            # For each response, find where it starts in the full conversation
+            response_len = len(response)
+            found = False
+            
+            # Search for the response starting from the current position
+            while current_pos <= len(tokenized) - response_len and not found:
+                if torch.equal(tokenized[current_pos:current_pos + response_len], response):
+                    # When found, unmask these positions by copying the token ids
+                    labels[current_pos:current_pos + response_len] = tokenized[current_pos:current_pos + response_len]
+                    current_pos += response_len
+                    found = True
+                else:
+                    current_pos += 1
         return labels
+    
+    def __len__(self):
+        return len(self.dataset) // self.n_examples
 
 def collate_fn(batch):
     # handle text inputs
