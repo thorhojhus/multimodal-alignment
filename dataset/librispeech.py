@@ -58,6 +58,7 @@ class LibriSpeechChatDataset(torch.utils.data.Dataset):
         # process audio from first example only 
         audio_samples = [example["audio"] for example in examples]
         audio_features = [self._audio_to_features(audio) for audio in audio_samples]
+        audio_features = torch.stack(audio_features)
         
         # get texts from all examples
         texts = [example["text"].lower().strip() for example in examples]

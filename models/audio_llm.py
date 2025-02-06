@@ -115,42 +115,81 @@ class AudioLLMModel(nn.Module):
         return [(row != self.audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
     def _process_audio_features(self, audio_features: Tensor) -> Tensor:
-        # encode and project audio features
+        B, N, F, T = audio_features.shape
+        
+        # Reshape to [B*N, F, T] to process all examples at once
+        reshaped_features = audio_features.view(B * N, F, T)
+        
+        # Process through whisper encoder
         with torch.no_grad():
-            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-        return self.projector(audio_encoded)
+            encoded = self.audio_encoder(reshaped_features).last_hidden_state  # [B*N, L, D]
+        
+        # Project the features
+        projected = self.projector(encoded)  # [B*N, L', D'] where L' is downsampled length
+        
+        # Take mean over sequence length to get fixed-size representation
+        pooled = projected.mean(dim=1)  # [B*N, D']
+        
+        # Reshape back to [B, N, D']
+        return pooled.view(B, N, -1)
 
     def _combine_embeddings(
         self, text_embeds: Tensor, audio_embeds: Tensor, 
         insertion_indices: List[Tensor], labels: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
-        # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
-        B, D, _ = audio_embeds.shape
+        B, num_audio_segments, D = audio_embeds.shape
 
         for i in range(B):
             embeds = text_embeds[i]
             lbls = labels[i] if labels is not None else None
             att_mask = attention_mask[i] if attention_mask is not None else None
-
+            
+            # If there are audio tokens to insert
             if insertion_indices[i].numel() > 0:
-                idx = insertion_indices[i][0].item()
-                # insert audio embeddings at specified position
-                combined_embeds = torch.cat([embeds[:idx], audio_embeds[i], embeds[idx:]], dim=0)
+                # Split text embeddings at each insertion point
+                split_indices = insertion_indices[i].tolist()
+                split_embeds = torch.tensor_split(embeds, split_indices)
+                
+                # Initialize combined sequence with first text segment
+                combined_parts = [split_embeds[0]]
+                
+                # Interleave audio and remaining text segments
+                for j, (audio_embed, text_segment) in enumerate(zip(audio_embeds[i], split_embeds[1:])):
+                    combined_parts.append(audio_embed.unsqueeze(0))  # Add audio embedding
+                    combined_parts.append(text_segment)  # Add next text segment
+                    
+                # Concatenate all parts
+                combined_embeds = torch.cat(combined_parts, dim=0)
                 
                 if lbls is not None:
-                    # mark audio positions with -100 in labels
-                    audio_labels = torch.full((D,), -100, dtype=lbls.dtype, device=lbls.device)
-                    combined_labels = torch.cat([lbls[:idx], audio_labels, lbls[idx:]], dim=0)
+                    # Split labels at insertion points
+                    split_labels = torch.tensor_split(lbls, split_indices)
+                    label_parts = [split_labels[0]]
+                    
+                    # Insert -100 labels for audio segments
+                    for text_segment in split_labels[1:]:
+                        label_parts.append(torch.full((1,), -100, dtype=lbls.dtype, device=lbls.device))
+                        label_parts.append(text_segment)
+                        
+                    combined_labels = torch.cat(label_parts, dim=0)
                     combined_labels_list.append(combined_labels)
-
+                
                 if att_mask is not None:
-                    # set attention mask for audio embeddings
-                    audio_mask = torch.ones(D, dtype=att_mask.dtype, device=att_mask.device)
-                    combined_att_mask = torch.cat([att_mask[:idx], audio_mask, att_mask[idx:]], dim=0)
+                    # Split attention mask at insertion points
+                    split_masks = torch.tensor_split(att_mask, split_indices)
+                    mask_parts = [split_masks[0]]
+                    
+                    # Insert attention mask of 1 for audio segments
+                    for text_segment in split_masks[1:]:
+                        mask_parts.append(torch.ones(1, dtype=att_mask.dtype, device=att_mask.device))
+                        mask_parts.append(text_segment)
+                        
+                    combined_att_mask = torch.cat(mask_parts, dim=0)
                     combined_attention_mask_list.append(combined_att_mask)
             else:
+                # If no audio tokens, use original sequences
                 combined_embeds = embeds
                 if lbls is not None:
                     combined_labels_list.append(lbls)
@@ -158,7 +197,6 @@ class AudioLLMModel(nn.Module):
                     combined_attention_mask_list.append(att_mask)
             
             combined_embeds_list.append(combined_embeds)
-
         return combined_embeds_list, combined_labels_list, combined_attention_mask_list
 
     def _pad_sequences(
