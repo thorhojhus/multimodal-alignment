@@ -1,6 +1,6 @@
 name: 'Build LaTex Document with Biber'
 on:
-  push:
+  release:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,3 +25,4 @@ jobs:
         with:
           name: main
           path: tex/main.pdf
+          retention-days: 5
