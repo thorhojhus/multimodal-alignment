@@ -24,4 +24,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: main
-          path: report.pdf
+          path: tex/main.pdf
