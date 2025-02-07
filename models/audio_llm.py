@@ -54,7 +54,8 @@ class AudioLLMModel(nn.Module):
         self.audio_token_str = "<|audio|>"
         self._add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
-        self.tokenizer.pad_token = self.tokenizer.unk_token
+        if self.tokenizer.pad_token == self.tokenizer.eos_token:
+            self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
     def _create_audio_encoder(self) -> WhisperModel:
@@ -282,7 +283,7 @@ if __name__ == "__main__":
     input_ids[0, 1] = model.audio_token_id
     input_ids[1, 2] = model.audio_token_id
     
-    audio_features = torch.randn(B, 80, 1500).to("cuda", torch.bfloat16)
+    audio_features = torch.randn(B, 80, 3000).to("cuda", torch.bfloat16)
     attention_mask = torch.ones(B, T, device="cuda", dtype=torch.int64)
     labels = input_ids.clone()
 
