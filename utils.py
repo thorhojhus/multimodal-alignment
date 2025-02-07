@@ -2,7 +2,7 @@ import os
 import logging
 import torch
 from torch.utils.data import DataLoader
-from dataset.librispeech import collate_fn
+from dataset.audio_dataset import collate_fn
 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:

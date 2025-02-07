@@ -97,13 +97,12 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             
             if global_step % cfg.training.log_every_n_steps == 0:
                 current_lr = scheduler.get_last_lr()[0]
+                memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
+                memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
                 logger.info(
-                    f"Step {global_step} | "
-                    f"Epoch {epoch+1} | "
-                    f"Batch {batch_idx}/{len(dataloader)} | "
-                    f"Loss: {loss.item():.4f} | "
-                    f"LR: {current_lr:.2e} | "
-                    f"Batch Time: {batch_time:.2f}s"
+                    f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
+                    f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
+                    f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
             
             # Save checkpoint if needed
