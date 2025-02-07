@@ -1,5 +1,7 @@
 import logging
 import time
+import wandb
+from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
 
@@ -14,6 +16,14 @@ from utils import print_parameter_count, save_checkpoint, load_checkpoint, run_e
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)
+
+def setup_wandb(runtime_config: DictConfig) -> None:
+    wandb.init(
+        entity="borkeren",
+        project="multimodal-alignment",
+        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-run-{datetime.now()}",
+        config=dict(runtime_config)
+    )
 
 def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictConfig) -> None:
     # create checkpoint directory
@@ -104,6 +114,9 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
+                wandb.log({
+                    "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                })
             
             # Save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
@@ -141,7 +154,7 @@ def main(cfg: DictConfig):
     #torch.backends.cudnn.allow_tf32 = True
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
-    
+    setup_wandb(cfg)
     # initialize components using config values from Hydra
     config = AudioLLMConfig(
         downsample_factor=cfg.model.downsample_factor,
