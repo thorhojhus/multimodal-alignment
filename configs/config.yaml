@@ -20,5 +20,6 @@ training:
   log_every_n_steps: 10
 
 dataset:
+  name: "coral"
   split: "train.clean.360"
   test_split: "test.clean"

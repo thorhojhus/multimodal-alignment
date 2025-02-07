@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
 from models.audio_llm import AudioLLMModel, AudioLLMConfig
-from dataset.librispeech import LibriSpeechChatDataset, collate_fn
+from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
 from omegaconf import DictConfig
 from utils import print_parameter_count, save_checkpoint, load_checkpoint, run_evaluation
@@ -20,7 +20,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
-    test_dataset = LibriSpeechChatDataset(
+    test_dataset = AudioChatDataset(
         split="test.clean",
         tokenizer=model.tokenizer,
         processor=AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
@@ -153,7 +153,8 @@ def main(cfg: DictConfig):
     
     # create dataset and processor
     processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
-    dataset = LibriSpeechChatDataset(
+    dataset = AudioChatDataset(
+        dataset=cfg.dataset.name,
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
         processor=processor
