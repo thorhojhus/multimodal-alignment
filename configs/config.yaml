@@ -19,7 +19,10 @@ training:
   resume_checkpoint_path: "checkpoints/checkpoint_latest.pt"
   log_every_n_steps: 10
 
+eval:
+  n_samples: 8
+
 dataset:
-  name: "coral"
+  name: "librispeech"
   split: "train.clean.360"
   test_split: "test.clean"

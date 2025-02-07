@@ -64,59 +64,62 @@ def load_checkpoint(
     
     return checkpoint['global_step'], checkpoint['loss']
 
-def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Dataset, tokenizer, logger: logging.Logger) -> None:
+def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Dataset, tokenizer, logger: logging.Logger, n_samples: int) -> None:
     """
-    Run generation sequentially on samples from test dataset and compare with ground truth.
+    Run generation on a batch from test dataset and compare with ground truth.
     Only includes user prompt during generation.
     """
     model.eval()
     test_loader = DataLoader(
         test_dataset,
-        batch_size=1,  # Changed to 1 for sequential processing
+        batch_size=n_samples,
         collate_fn=collate_fn,
         shuffle=True
     )
     
-    # get two samples (keeping same number of examples as original)
-    samples = []
-    for i, batch in enumerate(test_loader):
-        if i >= 2:  # Process only 2 samples
-            break
-        samples.append(batch)
-    
-    for i, batch in enumerate(samples):
-        input_ids = batch["input_ids"].to("cuda")
-        audio_features = batch["audio_features"].to("cuda", torch.bfloat16)
-        
-        # extract only the user part of the conversation for generation
+    # get one batch
+    batch = next(iter(test_loader))
+
+    # extract only the user part of the conversation for generation
+    def get_user_prompt(ids):
         # find positions of BOS tokens
-        bos_positions = (input_ids[0] == tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
+        bos_positions = (ids == tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
         # get the last BOS token position (start of assistant's response)
         last_bos = bos_positions[-1].item()
-        # get user prompt (everything before assistant's response)
-        user_prompt = input_ids[0, :last_bos+4]
+        # return everything before the assistant's response
+        return ids[:last_bos+4]
+    
+    # extract ground truth (assistant's response)
+    def get_ground_truth(ids):
+        # find positions of BOS and EOS tokens
+        bos_positions = (ids == tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
+        eos_positions = (ids == tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
         
-        # extract ground truth (assistant's response)
-        # find positions of EOS tokens
-        eos_positions = (input_ids[0] == tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
+        # get the last BOS token (start of assistant response)
+        last_bos = bos_positions[-1].item()
+        
         # find the first EOS after last BOS
         eos_after_bos = eos_positions[eos_positions > last_bos]
-        response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(input_ids[0])
-        # extract and decode the assistant's response
-        response_ids = input_ids[0, last_bos+4:response_end]
-        ground_truth = tokenizer.decode(response_ids, skip_special_tokens=True)
+        response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(ids)
         
-        # generate completion
+        # extract and decode the assistant's response
+        response_ids = ids[last_bos+4:response_end]
+        return tokenizer.decode(response_ids, skip_special_tokens=True)
+
+    
+    for i in range(n_samples):
+        user_prompt = get_user_prompt(batch["input_ids"][i])
+        ground_truth = get_ground_truth(batch["input_ids"][i])
+        # generate completions
         with torch.inference_mode():
-            output = model.generate(
-                input_ids=user_prompt.unsqueeze(0),
-                audio_features=audio_features,
+            outputs = model.generate(
+                input_ids=user_prompt.unsqueeze(0).to("cuda"),
+                audio_features=batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
                 max_new_tokens=100,
                 do_sample=False,
             )
-        
-        # decode and log results
-        generated_text = tokenizer.decode(output[0][len(user_prompt):], skip_special_tokens=False)
+    
+        generated_text = tokenizer.decode(outputs[0].tolist(), skip_special_tokens=False)
         
         logger.info("\nEvaluation Sample %d:", i + 1)
         logger.info("User prompt: %s", tokenizer.decode(user_prompt, skip_special_tokens=False))
