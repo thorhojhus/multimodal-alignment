@@ -45,7 +45,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _format_chat(self, example):
         return [
             {"role": "user", "content": f"Repeat the following: {self.audio_token}"},
-            {"role": "assistant", "content": get_true_case(example)}
+            {"role": "assistant", "content": example.lower()}
         ]
 
     def __getitem__(self, idx):

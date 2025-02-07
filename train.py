@@ -21,6 +21,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     test_dataset = AudioChatDataset(
+        dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
         processor=AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
