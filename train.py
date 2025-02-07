@@ -137,9 +137,9 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):
-    #torch.set_float32_matmul_precision('high')
-    #torch.backends.cuda.matmul.allow_tf32 = True
-    #torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision('high')
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     
