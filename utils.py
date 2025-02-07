@@ -72,7 +72,7 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     model.eval()
     test_loader = DataLoader(
         test_dataset,
-        batch_size=2,
+        batch_size=1,
         collate_fn=collate_fn,
         shuffle=True
     )
@@ -128,21 +128,22 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     
     input_ids_for_gen = torch.stack(padded_prompts)
     attention_mask_for_gen = torch.stack(attention_masks)
-    
-    # generate completions
-    with torch.inference_mode():
-        outputs = model.generate(
-            input_ids=input_ids_for_gen,
-            audio_features=audio_features,
-            attention_mask=attention_mask_for_gen,
-            max_new_tokens=100,
-            do_sample=False,
-        )
+    outputs = []
+    for i in range(12):
+        # generate completions
+        with torch.inference_mode():
+            output = model.generate(
+                input_ids=input_ids_for_gen,
+                audio_features=audio_features,
+                attention_mask=attention_mask_for_gen,
+                max_new_tokens=100,
+                do_sample=False,
+            )
+        outputs.append(output)
     
     # log results
     for i in range(len(outputs)):
         generated_text = tokenizer.decode(outputs[i][len(user_prompts[i]):], skip_special_tokens=False)
-        
         logger.info("\nEvaluation Sample %d:", i + 1)
         logger.info("User prompt: %s", tokenizer.decode(user_prompts[i], skip_special_tokens=False))
         logger.info("Ground truth: %s", ground_truths[i])
