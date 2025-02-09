@@ -1,15 +1,15 @@
 import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
-from dataset.load_librispeech import librispeech_dataset_dict
-from dataset.load_coral import coral_dataset_dict
 from truecase import get_true_case
 
 class AudioChatDataset(torch.utils.data.Dataset):
     def __init__(self, dataset="coral", split="train.clean.100", tokenizer=None, processor=None):
         if dataset == "coral":
+            from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
         if dataset == "librispeech":
+            from dataset.load_librispeech import librispeech_dataset_dict
             self.dataset = librispeech_dataset_dict[str(split)]
         else:
             print("Unsupported dataset")
