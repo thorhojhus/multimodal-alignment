@@ -2,7 +2,7 @@ import os
 import logging
 import torch
 from torch.utils.data import DataLoader
-from dataset.audio_dataset import collate_fn
+from dataset.audio_dataset import collate_fn, prepare_inputs
 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
@@ -110,11 +110,14 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     for i in range(n_samples):
         user_prompt = get_user_prompt(batch["input_ids"][i])
         ground_truth = get_ground_truth(batch["input_ids"][i])
+        
         # generate completions
         with torch.inference_mode():
             outputs = model.generate(
                 input_ids=user_prompt.unsqueeze(0).to("cuda"),
                 audio_features=batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
+                insertion_indices=batch["insertion_indices"][i].to("cuda").unsqueeze(0),
+                attention_mask=batch["attention_mask"][i].to("cuda").unsqueeze(0),
                 max_new_tokens=100,
                 do_sample=False,
             )
