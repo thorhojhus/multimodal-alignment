@@ -3,7 +3,7 @@ hydra:
     chdir: true
 
 wandb:
-  enabled: true
+  enabled: false
 
 model:
   downsample_factor: 10

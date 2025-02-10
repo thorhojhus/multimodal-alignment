@@ -115,6 +115,8 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
             outputs = model.generate(
                 input_ids=user_prompt.unsqueeze(0).to("cuda"),
                 audio_features=batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
+                insertion_indices=batch["insertion_indices"][i].to("cuda").unsqueeze(0),
+                attention_mask=batch["attention_mask"][i].to("cuda").unsqueeze(0),
                 max_new_tokens=100,
                 do_sample=False,
             )

@@ -84,12 +84,16 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
             audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
+            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+            insertion_indices = batch["insertion_indices"]
             
             # forward pass
             outputs = model(
                 input_ids=input_ids,
                 audio_features=audio_features,
-                labels=labels
+                labels=labels,
+                attention_mask=attention_mask,
+                insertion_indices=insertion_indices
             )
 
             # backward pass
@@ -116,9 +120,10 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
-                wandb.log({
-                    "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
-                })
+                if cfg.wandb.enabled:
+                    wandb.log({
+                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                    })
             
             # Save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
