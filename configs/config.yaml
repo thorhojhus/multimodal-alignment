@@ -2,6 +2,9 @@ hydra:
   job:
     chdir: true
 
+wandb:
+  enabled: true
+
 model:
   downsample_factor: 10
   lm_model_name: "HuggingFaceTB/SmolLM2-360M-Instruct"
