@@ -2,9 +2,12 @@ import torch
 from transformers import AutoProcessor
 from datasets import load_dataset
 from truecase import get_true_case
+from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset="coral", split="train.clean.100", tokenizer=None, processor=None):
+    def __init__(self, lm_model: str, dataset="coral", split="train.clean.100", tokenizer=None, processor=None):
+        self.lm_model_name = lm_model
+
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -17,7 +20,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
-
+        
     ### NOTE: this is a pretty gnarly way to do it
     ### Should probably be done in another way;
     try:
@@ -29,7 +32,19 @@ class AudioChatDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.dataset)
-
+    
+    def _setup_chat_template(self):
+        name = self.lm_model_name.split("/")[-1].split("-")[0].lower()
+        if name == "smollm2":
+            self.chat_template = CHATML_TEMPLATE
+        elif name == "llama":
+            self.chat_template = LLAMA3_TEMPLATE
+        elif name == "gemma":
+            self.chat_template = GEMMA_2
+        else:
+            print("Custom chat template not found")
+            pass
+        
     def _audio_to_features(self, audio):
         audio = audio["array"]
 
