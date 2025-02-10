@@ -90,7 +90,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 audio_features=audio_features,
                 labels=labels
             )
-            
+
             # backward pass
             loss = outputs.loss
             loss.backward()
@@ -155,7 +155,6 @@ def main(cfg: DictConfig):
     torch.backends.cudnn.allow_tf32 = True
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
-    setup_wandb(cfg)
     # initialize components using config values from Hydra
     config = AudioLLMConfig(
         downsample_factor=cfg.model.downsample_factor,
@@ -178,6 +177,9 @@ def main(cfg: DictConfig):
         param.requires_grad = False
     for param in model.lm.parameters():
         param.requires_grad = False
+
+    if cfg.wandb.enabled:
+        setup_wandb(cfg)
     
     train(model, dataset, cfg)
 
