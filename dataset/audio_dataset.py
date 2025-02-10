@@ -22,15 +22,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
-        
-    ### NOTE: this is a pretty gnarly way to do it
-    ### Should probably be done in another way;
-    try:
-        get_true_case("Any lookup erros?")
-    except LookupError:
-        import nltk
-        nltk.download("punkt_tab")
-        get_true_case("Any lookup erros?")
 
     def __len__(self):
         return len(self.dataset)
