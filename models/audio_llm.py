@@ -167,22 +167,17 @@ class AudioLLMModel(nn.Module):
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
-        attention_mask: Optional[Tensor] = None,
+        insertion_indices: Tensor, attention_mask: Tensor,
         max_new_tokens: int = 100,
         **generation_kwargs: Any
     ) -> Tensor:
-        # prepare inputs for generation
-        new_input_ids, new_attention_mask, _, insertion_indices = self._prepare_inputs(
-            input_ids, attention_mask, None
-        )
-        
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
-        text_embeds = self.lm.get_input_embeddings()(new_input_ids)
+        text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
         combined_lists = self._combine_embeddings(
-            text_embeds, audio_embeds, insertion_indices, attention_mask=new_attention_mask
+            text_embeds, audio_embeds, insertion_indices, attention_mask=attention_mask
         )
         combined_embeds, _, combined_attention_mask = self._pad_sequences(combined_lists)
 
