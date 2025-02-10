@@ -71,22 +71,6 @@ class AudioLLMModel(nn.Module):
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
 
-    def _get_audio_positions(self, input_ids: Tensor) -> List[Tensor]:
-        # find positions of audio tokens in each sequence
-        return [(row == self.audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
-
-    def _adjust_insertion_indices(self, audio_positions: List[Tensor]) -> List[Tensor]:
-        # adjust indices for audio token insertion
-        return [
-            pos - torch.arange(len(pos), device=pos.device) if pos.numel() > 0
-            else torch.tensor([], dtype=torch.long, device=pos.device)
-            for pos in audio_positions
-        ]
-
-    def _get_valid_positions(self, input_ids: Tensor) -> List[Tensor]:
-        # get positions of non-audio tokens
-        return [(row != self.audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
-
     def _process_audio_features(self, audio_features: Tensor) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
@@ -160,45 +144,18 @@ class AudioLLMModel(nn.Module):
         # load only the projector weights
         self.projector.load_state_dict(torch.load(load_path, weights_only=True))
 
-    def _prepare_inputs(
-        self, input_ids: Tensor, attention_mask: Optional[Tensor], labels: Optional[Tensor]
-    ) -> Tuple[Tensor, Tensor, Tensor, List[Tensor]]:
-        # prepare input tensors for model
-        if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
-        if labels is None:
-            labels = input_ids.clone()
-
-        audio_positions = self._get_audio_positions(input_ids)
-        insertion_indices = self._adjust_insertion_indices(audio_positions)
-        valid_positions = self._get_valid_positions(input_ids)
-
-        # remove audio tokens and pad sequences
-        new_input_ids = [input_ids[i][pos] for i, pos in enumerate(valid_positions)]
-        new_labels = [labels[i][pos] for i, pos in enumerate(valid_positions)]
-        new_attention_mask = [attention_mask[i][pos] for i, pos in enumerate(valid_positions)]
-
-        new_input_ids = torch.nn.utils.rnn.pad_sequence(new_input_ids, batch_first=True, padding_value=self.pad_token_id)
-        new_labels = torch.nn.utils.rnn.pad_sequence(new_labels, batch_first=True, padding_value=-100)
-        new_attention_mask = torch.nn.utils.rnn.pad_sequence(new_attention_mask, batch_first=True, padding_value=0)
-        return new_input_ids, new_attention_mask, new_labels, insertion_indices
-
     def forward(
-        self, input_ids: Tensor, audio_features: Tensor,
+        self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None
     ) -> Any:
-        # prepare input tensors
-        new_input_ids, new_attention_mask, new_labels, insertion_indices = self._prepare_inputs(
-            input_ids, attention_mask, labels
-        )
-        
+                
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
-        text_embeds = self.lm.get_input_embeddings()(new_input_ids)
+        text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
         combined_lists = self._combine_embeddings(
-            text_embeds, audio_embeds, insertion_indices, new_labels, new_attention_mask
+            text_embeds, audio_embeds, insertion_indices, labels, attention_mask
         )
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
         # forward pass through language model
