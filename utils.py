@@ -92,7 +92,7 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         # get the last BOS token position (start of assistant's response)
         last_bos = bos_positions[-1].item()
         # return everything before the assistant's response
-        return ids[:last_bos]
+        return ids[:last_bos+3]
     
     # extract ground truth (assistant's response)
     def get_ground_truth(ids, model_name):
