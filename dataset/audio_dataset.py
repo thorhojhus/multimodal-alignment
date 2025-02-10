@@ -127,7 +127,7 @@ def prepare_inputs(
     input_ids: Tensor, labels: Tensor | None, tokenizer
 ) -> tuple[Tensor, Tensor, Tensor, list[Tensor]]:
     # prepare input tensors for model
-    attention_mask = torch.ones_like(input_ids)
+    attention_mask = torch.ones_like(input_ids)  # NOTE: This does mask out padding correctly right now.
     if labels is None:
         labels = input_ids.clone()
 
