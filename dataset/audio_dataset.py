@@ -78,12 +78,14 @@ class AudioChatDataset(torch.utils.data.Dataset):
             return_tensors="pt"
         )[0]
 
+        # Tokenize only the part of the conversation that is part of the assistant.
         assistant_response = self.tokenizer.apply_chat_template(
             [conversation[-1]],
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
         
+        # Label such that only assistance part is considering doing the model pass
         labels = torch.full(tokenized.size(), fill_value=-100)
         labels[-len(assistant_response):] = assistant_response
 
@@ -95,9 +97,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
         }
 
 
-def get_audio_positions(input_ids: Tensor, tokenizer) -> list[Tensor]:
+def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # find positions of audio tokens in each sequence
-    return [(row == tokenizer.convert_tokens_to_ids("<|audio|>")).nonzero(as_tuple=True)[0] for row in input_ids]
+    return [(row == audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
 
 def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
@@ -108,10 +110,9 @@ def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
         for pos in audio_positions
     ]
 
-
-def get_valid_positions(input_ids: Tensor, tokenizer) -> list[Tensor]:
+def get_valid_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # get positions of non-audio tokens
-    return [(row != tokenizer.convert_tokens_to_ids("<|audio|>")).nonzero(as_tuple=True)[0] for row in input_ids]
+    return [(row != audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
 
 def prepare_inputs(
@@ -122,9 +123,11 @@ def prepare_inputs(
     if labels is None:
         labels = input_ids.clone()
 
-    audio_positions = get_audio_positions(input_ids, tokenizer)
+    audio_token_id = tokenizer.convert_tokens_to_ids("<|audio|>")
+
+    audio_positions = get_audio_positions(input_ids, audio_token_id)
     insertion_indices = adjust_insertion_indices(audio_positions)
-    valid_positions = get_valid_positions(input_ids, tokenizer)
+    valid_positions = get_valid_positions(input_ids, audio_token_id)
 
     # remove audio tokens and pad sequences
     new_input_ids = [input_ids[i][pos] for i, pos in enumerate(valid_positions)]
