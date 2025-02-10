@@ -137,7 +137,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
                 with torch.inference_mode():
-                    run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples)
+                    run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
             
             # reset batch timer
             batch_start_time = time.monotonic()

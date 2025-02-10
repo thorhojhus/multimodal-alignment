@@ -41,13 +41,15 @@ class AudioLLMModel(nn.Module):
         return encoder
 
     def _create_lm(self) -> nn.Module:
+        name = self.config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
-            attn_implementation="flash_attention_2",
+            attn_implementation="flash_attention_2" if name != "gemma" else "eager",
             torch_dtype=torch.bfloat16,
             device_map="cuda"
         )
+
         # freeze lm parameters
         for param in lm.parameters():
             param.requires_grad = False
@@ -243,7 +245,6 @@ class AudioLLMModel(nn.Module):
             "pad_token_id": self.pad_token_id,
             **generation_kwargs
         }
-
         # generate text completions
         return self.lm.generate(
             inputs_embeds=combined_embeds,

@@ -3,6 +3,7 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
+from torch.utils.data import Dataset
 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
@@ -64,36 +65,46 @@ def load_checkpoint(
     
     return checkpoint['global_step'], checkpoint['loss']
 
-def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Dataset, tokenizer, logger: logging.Logger, n_samples: int) -> None:
+def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Dataset, tokenizer, logger: logging.Logger, n_samples: int, config) -> None:
     """
     Run generation on a batch from test dataset and compare with ground truth.
     Only includes user prompt during generation.
     """
     model.eval()
+
     test_loader = DataLoader(
         test_dataset,
         batch_size=n_samples,
         collate_fn=collate_fn,
         shuffle=True
     )
-    
+    model_name = config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
     # get one batch
     batch = next(iter(test_loader))
 
     # extract only the user part of the conversation for generation
-    def get_user_prompt(ids):
+    def get_user_prompt(ids, model_name):
+        token_id = tokenizer.bos_token_id 
+        if model_name == "gemma":
+            token_id = 106 # <|start_of_turn|>
         # find positions of BOS tokens
-        bos_positions = (ids == tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
+        bos_positions = (ids == token_id).nonzero(as_tuple=True)[0]
         # get the last BOS token position (start of assistant's response)
         last_bos = bos_positions[-1].item()
         # return everything before the assistant's response
-        return ids[:last_bos+4]
+        return ids[:last_bos]
     
     # extract ground truth (assistant's response)
-    def get_ground_truth(ids):
+    def get_ground_truth(ids, model_name):
+        begin_of_turn = tokenizer.bos_token_id
+        end_of_turn = tokenizer.eos_token_id 
+        if model_name == "gemma":
+            begin_of_turn = 106 # <|start_of_turn|>
+            end_of_turn = 107 # <|end_of_turn|>
+
         # find positions of BOS and EOS tokens
-        bos_positions = (ids == tokenizer.bos_token_id).nonzero(as_tuple=True)[0]
-        eos_positions = (ids == tokenizer.eos_token_id).nonzero(as_tuple=True)[0]
+        bos_positions = (ids == begin_of_turn).nonzero(as_tuple=True)[0]
+        eos_positions = (ids == end_of_turn).nonzero(as_tuple=True)[0]
         
         # get the last BOS token (start of assistant response)
         last_bos = bos_positions[-1].item()
@@ -103,13 +114,13 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(ids)
         
         # extract and decode the assistant's response
-        response_ids = ids[last_bos+4:response_end]
+        response_ids = ids[last_bos:response_end]
         return tokenizer.decode(response_ids, skip_special_tokens=True)
 
     
     for i in range(n_samples):
-        user_prompt = get_user_prompt(batch["input_ids"][i])
-        ground_truth = get_ground_truth(batch["input_ids"][i])
+        user_prompt = get_user_prompt(batch["input_ids"][i], model_name)
+        ground_truth = get_ground_truth(batch["input_ids"][i], model_name)
         # generate completions
         with torch.inference_mode():
             outputs = model.generate(

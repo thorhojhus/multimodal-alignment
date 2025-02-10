@@ -15,18 +15,20 @@ LLAMA3_TEMPLATE = """"{{- bos_token }}
 {%- endif %}"""
 
 
-GEMMA_2 = """{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}
-{%- if messages[0]['role'] != 'system' -%}
-    {%- for message in messages -%}
-        {%- if message['role'] == 'assistant' -%}
-            {%- set role = 'model' -%}
-        {%- else -%}
-            {%- set role = message['role'] -%}
-        {%- endif -%}
-        {{- '<start_of_turn>' + role + '\n' + message['content'] | trim + '<end_of_turn>\n' -}}
-    {%- endfor -%}
-    {%- if add_generation_prompt -%}
-        {{- '<start_of_turn>model\n' -}}
-    {%- endif -%}
-{%- endif -%}
-"""
+GEMMA_2 = """{{ bos_token }}
+{% if not add_generation_prompt is defined %}
+    {% set add_generation_prompt = false %}
+{% endif %}
+
+{% for message in messages %}
+    {% if message['role'] == 'assistant' %}
+        {% set role = 'model' %}
+    {% else %}
+        {% set role = message['role'] %}
+    {% endif %}
+    {{ '<start_of_turn>' + role + '\n' + message['content']|trim + '<end_of_turn>\n' }}
+{% endfor %}
+
+{% if add_generation_prompt %}
+    {{ '<start_of_turn>model\n' }}
+{% endif %}"""
