@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
-from models.audio_llm import AudioLLMModel, AudioLLMConfig
+from models.audio_llm import AudioLLMModel
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
 from omegaconf import DictConfig
@@ -162,12 +162,7 @@ def main(cfg: DictConfig):
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
-    config = AudioLLMConfig(
-        downsample_factor=cfg.model.downsample_factor,
-        lm_model_name=cfg.model.lm_model_name,
-        whisper_model_name=cfg.model.whisper_model_name
-    )
-    model = AudioLLMModel(config)
+    model = AudioLLMModel(config=cfg)
     
     # create dataset and processor
     processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)

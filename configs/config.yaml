@@ -21,6 +21,8 @@ training:
   resume_from_checkpoint: false
   resume_checkpoint_path: "checkpoints/checkpoint_latest.pt"
   log_every_n_steps: 10
+  kl_loss: true
+  kl_temp: 2.0
 
 eval:
   n_samples: 8
