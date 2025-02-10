@@ -6,7 +6,7 @@ from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
     def __init__(self, lm_model: str, dataset="coral", split="train.clean.100", tokenizer=None, processor=None):
-        self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
+        self.lm_model_name = lm_model
 
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
@@ -17,7 +17,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             print("Unsupported dataset")
         self.tokenizer = tokenizer
-        self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
@@ -35,11 +34,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
         return len(self.dataset)
     
     def _setup_chat_template(self):
-        if self.lm_model_name == "smollm2":
+        name = self.lm_model_name.split("/")[-1].split("-")[0].lower()
+        if name == "smollm2":
             self.tokenizer.chat_template = CHATML_TEMPLATE
-        elif self.lm_model_name == "llama":
+        elif name == "llama":
             self.tokenizer.chat_template = LLAMA3_TEMPLATE
-        elif self.lm_model_name == "gemma":
+        elif name == "gemma":
             self.tokenizer.chat_template = GEMMA_2
         else:
             print("Custom chat template not found")
@@ -58,17 +58,10 @@ class AudioChatDataset(torch.utils.data.Dataset):
         return inputs.input_features[0]
 
     def _format_chat(self, example):
-        if self.lm_model_name != "gemma":
-            return [
-                {"role": "system", "content": f"You transcribe speech to text. You need to repeat the text exactly as it is spoken."},
-                {"role": "user", "content": f"Transcribe and repeat the following text in lower case: {self.audio_token}"},
-                {"role": "assistant", "content": example.lower()}
-            ]
-        else:
-            return [
-                {"role": "user", "content": f"Transcribe and repeat the following text in lower case: {self.audio_token}"},
-                {"role": "assistant", "content": example.lower()}
-            ]
+        return [
+            {"role": "user", "content": f"Repeat the following: {self.audio_token}"},
+            {"role": "assistant", "content": example.lower()}
+        ]
 
     def __getitem__(self, idx):
         example = self.dataset[idx]
@@ -85,21 +78,35 @@ class AudioChatDataset(torch.utils.data.Dataset):
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
-
-        assistant_response = self.tokenizer.apply_chat_template(
-            [conversation[-1]],
-            add_generation_prompt=False,
-            return_tensors="pt"
-        )[0]
-        
-        labels = torch.full(tokenized.size(), fill_value=-100)
-        labels[-len(assistant_response):] = assistant_response
         
         return {
             "input_ids": tokenized,
             "audio_features": audio_features,
-            "labels": labels
+            "labels": self._create_labels(tokenized, conversation)
         }
+
+    def _create_labels(self, tokenized, conversation):
+        # mask all tokens except assistant response
+        labels = tokenized.clone()
+        bos_token_id = self.tokenizer.bos_token_id
+        eos_token_id = self.tokenizer.eos_token_id
+
+        # find all BOS and EOS positions
+        bos_positions = (tokenized == bos_token_id).nonzero(as_tuple=True)[0]
+        eos_positions = (tokenized == eos_token_id).nonzero(as_tuple=True)[0]
+
+        # get the last BOS token (start of assistant response)
+        last_bos = bos_positions[-1].item()
+        response_start = last_bos
+
+        # find the first EOS after last BOS (end of assistant response)
+        eos_after_bos = eos_positions[eos_positions > last_bos]
+        response_end = eos_after_bos[0].item() if len(eos_after_bos) > 0 else len(tokenized)
+
+        # mask non-response parts
+        labels[:response_start] = -100
+        labels[response_end:] = -100
+        return labels
 
 def collate_fn(batch):
     # handle text inputs
@@ -125,7 +132,7 @@ if __name__ == "__main__":
     import transformers
     tokenizer = transformers.AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-360M-Instruct")
     processor = AutoProcessor.from_pretrained("openai/whisper-base.en")
-    dataset = AudioChatDataset(tokenizer=tokenizer, processor=processor)
+    dataset = LibriSpeechChatDataset(tokenizer=tokenizer, processor=processor)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
     for batch in dataloader:
         print(batch)
