@@ -6,6 +6,9 @@ from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any, Union
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
+from torch.nn import functional as F
+from types import SimpleNamespace
+
 
 @dataclass
 class AudioLLMConfig:
@@ -185,7 +188,9 @@ class AudioLLMModel(nn.Module):
 
     def forward(
         self, input_ids: Tensor, audio_features: Tensor,
-        attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None
+        attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
+        alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
+        alt_labels: Optional[Tensor] = None, **kwargs
     ) -> Any:
         # prepare input tensors
         new_input_ids, new_attention_mask, new_labels, insertion_indices = self._prepare_inputs(
@@ -202,11 +207,14 @@ class AudioLLMModel(nn.Module):
         )
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
         # forward pass through language model
-        return self.lm(
+        lm_output = self.lm.forward(
             inputs_embeds=combined_embeds,
             attention_mask=combined_attention_mask,
-            labels=combined_labels
+            #labels=combined_labels
         )
+        #breakpoint()
+        return self._compute_kl_loss(lm_output, combined_labels, alt_input_ids=alt_input_ids, alt_labels=alt_labels)
+        #return lm_output
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
@@ -242,6 +250,43 @@ class AudioLLMModel(nn.Module):
             attention_mask=combined_attention_mask,
             **generation_config
         )
+
+    def _compute_kl_loss(
+        self,
+        lm_output: transformers.modeling_outputs.CausalLMOutputWithPast,
+        labels: Optional[torch.Tensor] = None,
+        past_key_values: Optional[Union[Tuple, transformers.cache_utils.Cache]] = None,
+        alt_input_ids: Optional[torch.Tensor] = None,
+        alt_attention_mask: Optional[torch.Tensor] = None,
+        alt_labels: Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        # disable gradient computation for the teacher model
+        with torch.no_grad():
+            # compute the teacher (text-only) model's distribution
+            alt_inputs_embeds = self.lm.get_input_embeddings().forward(alt_input_ids)
+            alt_lm_output = self.lm.forward(
+                inputs_embeds=alt_inputs_embeds,
+                #labels=alt_labels,
+                attention_mask=alt_attention_mask,
+                past_key_values=past_key_values,
+                **kwargs,
+            )
+        #breakpoint()
+        # compute the KL divergence loss between the two models
+        kl_loss = F.kl_div(
+            F.log_softmax(
+                lm_output.logits[labels != -100] / 2, #self.loss_config.kl_temperature,
+                dim=-1,
+            ),
+            F.softmax(
+                alt_lm_output.logits[alt_labels != -100]
+                / 2, #self.loss_config.kl_temperature,
+                dim=-1,
+            ),
+            reduction="batchmean",
+        )
+        return SimpleNamespace(loss=kl_loss)
     
 if __name__ == "__main__":
     B = 2

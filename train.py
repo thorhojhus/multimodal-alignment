@@ -84,12 +84,17 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
             audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
+            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+
             
             # forward pass
             outputs = model(
                 input_ids=input_ids,
                 audio_features=audio_features,
-                labels=labels
+                labels=labels,
+                alt_input_ids=alt_input_ids,
+                alt_labels=alt_labels
             )
 
             # backward pass
