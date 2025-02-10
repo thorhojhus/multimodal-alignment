@@ -63,11 +63,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
-
-        # find audio token position and replace with actual token ID
-        audio_token_idx = (tokenized == self.audio_token_id).nonzero()
-
-        tokenized[audio_token_idx] = self.audio_token_id
         
         return {
             "input_ids": tokenized,
