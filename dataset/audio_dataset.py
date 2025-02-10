@@ -36,11 +36,11 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _setup_chat_template(self):
         name = self.lm_model_name.split("/")[-1].split("-")[0].lower()
         if name == "smollm2":
-            self.chat_template = CHATML_TEMPLATE
+            self.tokenizer.chat_template = CHATML_TEMPLATE
         elif name == "llama":
-            self.chat_template = LLAMA3_TEMPLATE
+            self.tokenizer.chat_template = LLAMA3_TEMPLATE
         elif name == "gemma":
-            self.chat_template = GEMMA_2
+            self.tokenizer.chat_template = GEMMA_2
         else:
             print("Custom chat template not found")
             pass
