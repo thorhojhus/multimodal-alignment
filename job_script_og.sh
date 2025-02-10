@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=HuggingFaceTB/SmolLM2-1.7B-Instruct model.whisper_model_name=openai/whisper-large-v3-turbo training.batch_size=32 wandb.enabled=true
+python train.py model.lm_model_name=HuggingFaceTB/SmolLM2-1.7B-Instruct model.processor_model_name=openai/whisper-large-v3-turbo training.batch_size=32 wandb.enabled=true
 #python train.py

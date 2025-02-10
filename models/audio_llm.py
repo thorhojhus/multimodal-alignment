@@ -11,7 +11,7 @@ from liger_kernel.transformers import AutoLigerKernelForCausalLM
 class AudioLLMConfig:
     downsample_factor: int = 8
     lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
-    whisper_model_name: str = "openai/whisper-base"
+    processor_model_name: str = "openai/whisper-base"
 
 class AudioLLMModel(nn.Module):
     def __init__(self, config: AudioLLMConfig):
@@ -33,7 +33,7 @@ class AudioLLMModel(nn.Module):
     def _create_audio_encoder(self) -> WhisperModel:
         # initialize whisper encoder with flash attention (only encoder to GPU)
         whisper = transformers.WhisperModel.from_pretrained(
-            self.config.whisper_model_name,
+            self.config.processor_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map=None)

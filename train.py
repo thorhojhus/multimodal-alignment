@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from transformers import AutoProcessor, get_linear_schedule_with_warmup
+from transformers import AutoProcessor, get_linear_schedule_with_warmup, ClapTextModel
 from models.audio_llm import AudioLLMModel, AudioLLMConfig
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
@@ -35,7 +35,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
+        processor=AutoProcessor.from_pretrained(cfg.model.processor_model_name)
     )
     
     print_parameter_count(model, logger)
@@ -165,12 +165,12 @@ def main(cfg: DictConfig):
     config = AudioLLMConfig(
         downsample_factor=cfg.model.downsample_factor,
         lm_model_name=cfg.model.lm_model_name,
-        whisper_model_name=cfg.model.whisper_model_name
+        processor_model_name=cfg.model.processor_model_name
     )
     model = AudioLLMModel(config)
     
     # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
+    processor = AutoProcessor.from_pretrained(cfg.model.processor_model_name)
     dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
