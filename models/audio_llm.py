@@ -266,7 +266,6 @@ class AudioLLMModel(nn.Module):
         self,
         lm_output: transformers.modeling_outputs.CausalLMOutputWithPast,
         labels: Optional[torch.Tensor] = None,
-        past_key_values: Optional[Union[Tuple, transformers.cache_utils.Cache]] = None,
         alt_input_ids: Optional[torch.Tensor] = None,
         alt_attention_mask: Optional[torch.Tensor] = None,
         alt_labels: Optional[torch.Tensor] = None,
@@ -277,7 +276,6 @@ class AudioLLMModel(nn.Module):
             alt_lm_output = self.lm.forward(
                 inputs_embeds=alt_inputs_embeds,
                 attention_mask=alt_attention_mask,
-                past_key_values=past_key_values,
                 **kwargs,
             )
 

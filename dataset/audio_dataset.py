@@ -60,13 +60,13 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _format_chat(self, example, audio):
         if self.lm_model_name != "gemma":
             return [
-                {"role": "system", "content": f"You transcribe speech to text. You need to repeat the text exactly as it is spoken."},
-                {"role": "user", "content": f"Transcribe and repeat the following text in lower case: {audio}"},
+                {"role": "system", "content": f"You transcribe speech to text. You need to repeat the text once exactly as it is spoken."},
+                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
                 {"role": "assistant", "content": example}
             ]
         else:
             return [
-                {"role": "user", "content": f"Transcribe and repeat the following text in lower case: {audio}"},
+                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
                 {"role": "assistant", "content": example}
             ]
         
