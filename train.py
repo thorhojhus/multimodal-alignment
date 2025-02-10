@@ -116,10 +116,9 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
-                if cfg.wandb.enabled:
-                    wandb.log({
-                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
-                    })
+                wandb.log({
+                    "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                })
             
             # Save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
