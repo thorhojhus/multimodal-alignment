@@ -42,12 +42,22 @@ class AudioLLMModel(nn.Module):
 
     def _create_lm(self) -> nn.Module:
         name = self.config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
+        
+        # set quantization configuration
+        quantization_config = transformers.BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
             attn_implementation="flash_attention_2" if name != "gemma" else "eager",
             torch_dtype=torch.bfloat16,
-            device_map="cuda"
+            device_map="cuda",
+            quantization_config=quantization_config if self.config.model.load_in_4bit else None
         )
 
         # freeze lm parameters

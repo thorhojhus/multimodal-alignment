@@ -8,6 +8,7 @@ wandb:
 model:
   downsample_factor: 10
   lm_model_name: "HuggingFaceTB/SmolLM2-360M-Instruct"
+  load_in_4bit: false
   whisper_model_name: "openai/whisper-base"
 
 training:
