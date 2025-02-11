@@ -54,7 +54,7 @@ class AudioLLMModel(nn.Module):
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
-            attn_implementation="flash_attention_2" if name != "gemma" else "eager",
+            attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config if self.config.model.load_in_4bit else None
