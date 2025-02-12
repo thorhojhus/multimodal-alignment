@@ -12,14 +12,14 @@ from liger_kernel.transformers import AutoLigerKernelForCausalLM
 class AudioLLMConfig:
     downsample_factor: int = 8
     lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
-    processor_model_name: str = "openai/whisper-base"
+    encoder_model_name: str = "openai/whisper-base"
 
 class AudioLLMModel(nn.Module):
     def __init__(self, config: AudioLLMConfig):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = EncoderWrapper(config.processor_model_name)
+        self.audio_encoder = EncoderWrapper(config.encoder_model_name)
         self.lm = self._create_lm()
         self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
@@ -62,7 +62,7 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Tensor) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            audio_encoded = self.audio_encoder.audio_encoder(audio_features).last_hidden_state
         return self.projector(audio_encoded)
 
     def _combine_embeddings(

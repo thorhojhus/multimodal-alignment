@@ -8,7 +8,7 @@ from enum import Enum
 
 class EncoderEnum(Enum):
     WHISPER = "openai/whisper-base"
-    CLAP = "laion/clap-htsat-fused"
+    CLAP = "laion/clap-htsat-unfused"
 
 
 class EncoderWrapper(AutoModel):
@@ -16,7 +16,6 @@ class EncoderWrapper(AutoModel):
     def __init__(self, model: str):
         self.encoder_type = EncoderEnum(model)
         self.audio_encoder = self._initialize_encoder()
-        self.sampling_rate = None # gets set in above method call
     
     def _initialize_encoder(self):
         """Initialize/load the encoder."""
@@ -29,7 +28,6 @@ class EncoderWrapper(AutoModel):
                     torch_dtype=torch.bfloat16,
                     device_map=None
                 )
-                self.sampling_rate = whisper.feature_extractor.sampling_rate
                 encoder = whisper.encoder.to("cuda")
             case EncoderEnum.CLAP:
                 model = ClapModel.from_pretrained(
@@ -38,7 +36,6 @@ class EncoderWrapper(AutoModel):
                     torch_dtype=torch.bfloat16,
                     device_map=None
                 )
-                self.sampling_rate = 16000 # default
                 encoder = model.audio_model.audio_encoder.to("cuda")
 
         # freeze encoder params
@@ -53,9 +50,13 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.WHISPER:
                 return self.audio_encoder.config.d_model
             case EncoderEnum.CLAP: 
-                return self.audio_encoder.config.projection_dim
+                return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
 
     def __call__(self, *args, **kwargs):
         return self.audio_encoder(*args, **kwargs)
 
-    
+if __name__ == "__main__":
+    encoder = EncoderWrapper(EncoderEnum.WHISPER.value)
+    print(encoder)
+    encoder = EncoderWrapper(EncoderEnum.CLAP.value)
+    print(encoder)

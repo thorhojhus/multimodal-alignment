@@ -1,8 +1,6 @@
 import torch
 from torch import Tensor
 from transformers import AutoProcessor
-from datasets import load_dataset
-from truecase import get_true_case
 from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
@@ -36,17 +34,24 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             print("Custom chat template not found")
             pass
-        
+    
+    #LAIN CLAP: input.input_features.shape   = [1, 1, 1001, 64]
+	#           audio_features_encoded.shape = [8, 768, 2, 32]
+    #
+    #WHISPER:   input.input_features.shape   = [1, 80, 3000]
+	#           audio_features_encoded.shape = [8, 1500, 512]
+
     def _audio_to_features(self, audio):
         audio = audio["array"]
         inputs = self.processor(
-            audio,
-            sampling_rate=self.processor.sampling_rate,
+            audios=audio,
+            audio=audio,
+            sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
             truncation=True,
             #max_length=audio.size
         )
-        return inputs.input_features[0]
+        return inputs.input_features[0][0]
 
     def _format_chat(self, example):
         if self.lm_model_name != "gemma":
