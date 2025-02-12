@@ -1,6 +1,7 @@
 import transformers
 from models.whisper_modified import WhisperModel
 from models.linear_projector import Projector
+from models.encoders import EncoderWrapper
 import torch
 from torch import nn, Tensor
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ class AudioLLMModel(nn.Module):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = self._create_audio_encoder()
+        self.audio_encoder = EncoderWrapper(config.processor_model_name)
         self.lm = self._create_lm()
         self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
@@ -29,19 +30,6 @@ class AudioLLMModel(nn.Module):
         if self.tokenizer.pad_token == self.tokenizer.eos_token:
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
-
-    def _create_audio_encoder(self) -> WhisperModel:
-        # initialize whisper encoder with flash attention (only encoder to GPU)
-        whisper = transformers.WhisperModel.from_pretrained(
-            self.config.processor_model_name,
-            attn_implementation="flash_attention_2",
-            torch_dtype=torch.bfloat16,
-            device_map=None)
-        encoder = whisper.encoder.to("cuda")
-        # freeze encoder parameters
-        for param in encoder.parameters():
-            param.requires_grad = False
-        return encoder
 
     def _create_lm(self) -> nn.Module:
         # initialize language model with flash attention
@@ -58,7 +46,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_projector(self) -> Projector:
         # get dimensions for projector
-        whisper_dim = self.audio_encoder.config.d_model
+        whisper_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return Projector(whisper_dim, embed_dim, self.config.downsample_factor).to("cuda", torch.bfloat16)
 

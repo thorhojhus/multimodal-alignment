@@ -39,10 +39,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
         
     def _audio_to_features(self, audio):
         audio = audio["array"]
-
         inputs = self.processor(
-            audio, 
-            sampling_rate=self.processor.feature_extractor.sampling_rate,
+            audio,
+            sampling_rate=self.processor.sampling_rate,
             return_tensors="pt",
             truncation=True,
             #max_length=audio.size

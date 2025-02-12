@@ -21,7 +21,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-run-{datetime.now()}",
+        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.processor_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now().timestamp()}",
         config=dict(runtime_config)
     )
 
