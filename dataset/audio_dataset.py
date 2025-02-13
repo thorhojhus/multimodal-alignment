@@ -40,29 +40,49 @@ class AudioChatDataset(torch.utils.data.Dataset):
         sampling_rate = audio["sampling_rate"]
         audio_array = audio["array"]
         audio_array = torch.tensor(audio_array, dtype=torch.float32)
-        
-        if sampling_rate != self.processor.feature_extractor.sampling_rate:
+        try:
+            feature_extractor_sampling_rate = self.processor.feature_extractor.sampling_rate
+            processor_name = self.processor.feature_extractor.feature_extractor_type
+        except:
+            feature_extractor_sampling_rate = self.processor.sampling_rate
+            processor_name = self.processor.feature_extractor_type
+
+        if sampling_rate != feature_extractor_sampling_rate:
             audio_array = resample(
                 audio_array, 
                 orig_freq=sampling_rate,
-                new_freq=self.processor.feature_extractor.sampling_rate,
+                new_freq=feature_extractor_sampling_rate,
                 resampling_method="sinc_interp_hann"
             )
+        try:
+            if hasattr(self.processor.feature_extractor, 'nb_max_samples'):
+                # CLAP processor
+                max_length = self.processor.feature_extractor.nb_max_samples
+                if audio_array.size(-1) > max_length:
+                    audio_array = audio_array[:max_length]
+        except:
+            pass
 
-        if hasattr(self.processor.feature_extractor, 'nb_max_samples'):
-            # CLAP processor
-            max_length = self.processor.feature_extractor.nb_max_samples
-            if audio_array.size(-1) > max_length:
-                audio_array = audio_array[:max_length]
-
-        inputs = self.processor(
-            audios=audio_array,
-            audio=audio_array,
-            sampling_rate=self.processor.feature_extractor.sampling_rate,
-            return_tensors="pt",
-            truncation=True,
-            #max_length=audio.size
-        )
+        if processor_name == "SeamlessM4TFeatureExtractor":
+            inputs = self.processor(
+                raw_speech=audio_array,
+                sampling_rate=feature_extractor_sampling_rate,
+                return_tensors="pt",
+            )
+            features = inputs.input_features
+            breakpoint()
+            if features.ndim == 2:
+                features = features.transpose(0, 1)
+            return features
+        else:
+            inputs = self.processor(
+                audios=audio_array,
+                audio=audio_array,
+                sampling_rate=feature_extractor_sampling_rate,
+                return_tensors="pt",
+                #truncation=True,
+                #max_length=audio.size
+            )
         return inputs.input_features[0]
 
     def _format_chat(self, example, audio):
@@ -173,6 +193,7 @@ def collate_fn(batch, tokenizer):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
+    max_audio_len = max(item["audio_features"].size(1) for item in batch)
     pad_token_id = 0
     input_ids = []
     labels = []
@@ -187,15 +208,17 @@ def collate_fn(batch, tokenizer):
         
         input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=pad_token_id))
         labels.append(torch.nn.functional.pad(item["labels"], (0, pad_len), value=-100))
-        audio_features.append(item["audio_features"])
+        audio_feat = item["audio_features"]
+        pad_audio_len = max_audio_len - audio_feat.size(1)
+        padded_audio = torch.nn.functional.pad(audio_feat, (0, 0, 0, pad_audio_len), value=0)
+        audio_features.append(padded_audio)
         
         alt_input_ids.append(torch.nn.functional.pad(item["alt_input_ids"], (0, alt_pad_len), value=pad_token_id))
         alt_labels.append(torch.nn.functional.pad(item["alt_labels"], (0, alt_pad_len), value=-100))
     
 
-
     input_ids = torch.stack(input_ids)
-    audio_features = torch.stack(audio_features)
+    audio_features = torch.stack(audio_features).squeeze(0)
     labels = torch.stack(labels)
 
     prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(input_ids, labels, tokenizer)

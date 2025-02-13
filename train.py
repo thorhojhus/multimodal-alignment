@@ -26,17 +26,16 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictConfig) -> None:
+def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictConfig, processor) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+        processor=processor
     )
     
     print_parameter_count(model, logger)
@@ -173,7 +172,11 @@ def main(cfg: DictConfig):
 
     
     # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+    if cfg.model.encoder_model_name == "facebook/w2v-bert-2.0":
+        from transformers import AutoFeatureExtractor
+        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+    else:
+        processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
     dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
@@ -192,7 +195,7 @@ def main(cfg: DictConfig):
     if cfg.wandb.enabled:
         setup_wandb(cfg)
     
-    train(model, dataset, cfg)
+    train(model, dataset, cfg, processor)
 
 if __name__ == "__main__":
     main()
