@@ -175,3 +175,5 @@ cython_debug/
 .vscode/settings.json
 
 tex/src/report.pdf
+latest.err
+latest.out

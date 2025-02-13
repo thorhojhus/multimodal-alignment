@@ -7,8 +7,8 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from transformers import AutoProcessor, get_linear_schedule_with_warmup
-from models.audio_llm import AudioLLMModel
+from transformers import AutoProcessor, get_linear_schedule_with_warmup, ClapTextModel
+from models.audio_llm import AudioLLMModel, AudioLLMConfig
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
 from omegaconf import DictConfig
@@ -35,7 +35,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
+        processor=AutoProcessor.from_pretrained(cfg.model.processor_model_name)
     )
     
     print_parameter_count(model, logger)
@@ -86,7 +86,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
-
+            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+            insertion_indices = batch["insertion_indices"]
             
             # forward pass
             outputs = model(
@@ -95,6 +96,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 labels=labels,
                 alt_input_ids=alt_input_ids,
                 alt_labels=alt_labels
+                attention_mask=attention_mask,
+                insertion_indices=insertion_indices
             )
 
             # backward pass
@@ -122,9 +125,10 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
-                wandb.log({
-                    "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
-                })
+                if cfg.wandb.enabled:
+                    wandb.log({
+                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                    })
             
             # Save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
@@ -163,10 +167,16 @@ def main(cfg: DictConfig):
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
-    model = AudioLLMModel(config=cfg)
+    #model = AudioLLMModel(config=cfg)
+    config = AudioLLMConfig(
+        downsample_factor=cfg.model.downsample_factor,
+        lm_model_name=cfg.model.lm_model_name,
+        processor_model_name=cfg.model.processor_model_name
+    )
+    model = AudioLLMModel(config)
     
     # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.whisper_model_name)
+    processor = AutoProcessor.from_pretrained(cfg.model.processor_model_name)
     dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,

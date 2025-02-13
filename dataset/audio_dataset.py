@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 from transformers import AutoProcessor
 from datasets import load_dataset
 from truecase import get_true_case
@@ -11,7 +12,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
-        if dataset == "librispeech":
+        elif dataset == "librispeech":
             from dataset.load_librispeech import librispeech_dataset_dict
             self.dataset = librispeech_dataset_dict[str(split)]
         else:
@@ -21,15 +22,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
-        
-    ### NOTE: this is a pretty gnarly way to do it
-    ### Should probably be done in another way;
-    try:
-        get_true_case("Any lookup erros?")
-    except LookupError:
-        import nltk
-        nltk.download("punkt_tab")
-        get_true_case("Any lookup erros?")
 
     def __len__(self):
         return len(self.dataset)
@@ -93,12 +85,14 @@ class AudioChatDataset(torch.utils.data.Dataset):
             return_tensors="pt"
         )[0]
 
+        # Tokenize only the part of the conversation that is part of the assistant.
         assistant_response = self.tokenizer.apply_chat_template(
             [conversation[-1]],
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
         
+        # Label such that only assistance part is considering doing the model pass
         labels = torch.full(tokenized.size(), fill_value=-100)
         labels[-len(assistant_response):] = assistant_response
 
@@ -111,7 +105,53 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "labels": labels,
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels
+            "tokenizer": self.tokenizer, #NOTE: expose internal tokenizer to collate_fn below
         }
+
+
+def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
+    # find positions of audio tokens in each sequence
+    return [(row == audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
+
+
+def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
+    # adjust indices for audio token insertion
+    return [
+        pos - torch.arange(len(pos), device=pos.device) if pos.numel() > 0
+        else torch.tensor([], dtype=torch.long, device=pos.device)
+        for pos in audio_positions
+    ]
+
+def get_valid_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
+    # get positions of non-audio tokens
+    return [(row != audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
+
+
+def prepare_inputs(
+    input_ids: Tensor, labels: Tensor | None, tokenizer
+) -> tuple[Tensor, Tensor, Tensor, list[Tensor]]:
+    # prepare input tensors for model
+    attention_mask = torch.ones_like(input_ids)  # NOTE: This does mask out padding correctly right now.
+    if labels is None:
+        labels = input_ids.clone()
+
+    audio_token_id = tokenizer.convert_tokens_to_ids("<|audio|>")
+
+    audio_positions = get_audio_positions(input_ids, audio_token_id)
+    insertion_indices = adjust_insertion_indices(audio_positions)
+    valid_positions = get_valid_positions(input_ids, audio_token_id)
+
+    # remove audio tokens and pad sequences
+    new_input_ids = [input_ids[i][pos] for i, pos in enumerate(valid_positions)]
+    new_labels = [labels[i][pos] for i, pos in enumerate(valid_positions)]
+    new_attention_mask = [attention_mask[i][pos] for i, pos in enumerate(valid_positions)]
+
+    new_input_ids = torch.nn.utils.rnn.pad_sequence(new_input_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
+    new_labels = torch.nn.utils.rnn.pad_sequence(new_labels, batch_first=True, padding_value=-100)
+    new_attention_mask = torch.nn.utils.rnn.pad_sequence(new_attention_mask, batch_first=True, padding_value=0)
+    
+    return new_input_ids, new_attention_mask, new_labels, insertion_indices
+
 
 def collate_fn(batch):
     # handle text inputs
@@ -123,6 +163,7 @@ def collate_fn(batch):
     audio_features = []
     alt_input_ids = []
     alt_labels = []
+    tokenizer = batch[-1]["tokenizer"]
     
     for item in batch:
         # pad input_ids and labels
@@ -138,10 +179,19 @@ def collate_fn(batch):
     
 
 
+    input_ids = torch.stack(input_ids)
+    audio_features = torch.stack(audio_features)
+    labels = torch.stack(labels)
+
+    prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(input_ids, labels, tokenizer)
+    
+    
     return {
-        "input_ids": torch.stack(input_ids),
-        "audio_features": torch.stack(audio_features),
-        "labels": torch.stack(labels),
+        "input_ids": prepared_input_ids,
+        "audio_features": audio_features,
+        "labels": prepared_labels,
+        "attention_mask": prepared_attention_mask,
+        "insertion_indices": prepared_insertion_indices
         "alt_input_ids": torch.stack(alt_input_ids),
         "alt_labels": torch.stack(alt_labels)
     }
@@ -149,8 +199,10 @@ def collate_fn(batch):
 if __name__ == "__main__":
     import transformers
     tokenizer = transformers.AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-360M-Instruct")
-    processor = AutoProcessor.from_pretrained("openai/whisper-base.en")
-    dataset = AudioChatDataset(tokenizer=tokenizer, processor=processor)
+    if "<|audio|>" not in tokenizer.get_vocab():
+        tokenizer.add_special_tokens({"additional_special_tokens": ["<|audio|>"]})
+    processor = AutoProcessor.from_pretrained("openai/whisper-base")
+    dataset = AudioChatDataset(lm_model="smollm2", tokenizer=tokenizer, processor=processor)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
     for batch in dataloader:
         print(batch)
