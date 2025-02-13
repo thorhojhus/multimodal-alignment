@@ -9,9 +9,6 @@ from omegaconf import DictConfig
 import torch
 import jiwer
 
-wer_metric = load("wer")
-cer_metric = load("cer")
-
 # set up a module-level logger
 logger = logging.getLogger(__name__)
 

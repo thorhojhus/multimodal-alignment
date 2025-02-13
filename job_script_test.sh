@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python test.py wandb.enabled=true
+python test.py
 #python train.py
