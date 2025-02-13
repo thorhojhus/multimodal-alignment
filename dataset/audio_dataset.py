@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor
 from transformers import AutoProcessor
+from torchaudio.functional import resample
 from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
@@ -36,10 +37,27 @@ class AudioChatDataset(torch.utils.data.Dataset):
             pass
 
     def _audio_to_features(self, audio):
-        audio = audio["array"]
+        sampling_rate = audio["sampling_rate"]
+        audio_array = audio["array"]
+        audio_array = torch.tensor(audio_array, dtype=torch.float32)
+        
+        if sampling_rate != self.processor.feature_extractor.sampling_rate:
+            audio_array = resample(
+                audio_array, 
+                orig_freq=sampling_rate,
+                new_freq=self.processor.feature_extractor.sampling_rate,
+                resampling_method="sinc_interp_hann"
+            )
+
+        if hasattr(self.processor.feature_extractor, 'nb_max_samples'):
+            # CLAP processor
+            max_length = self.processor.feature_extractor.nb_max_samples
+            if audio_array.size(-1) > max_length:
+                audio_array = audio_array[:max_length]
+
         inputs = self.processor(
-            audios=audio,
-            audio=audio,
+            audios=audio_array,
+            audio=audio_array,
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
             truncation=True,
