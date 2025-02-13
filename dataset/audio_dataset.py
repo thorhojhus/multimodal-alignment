@@ -1,8 +1,6 @@
 import torch
 from torch import Tensor
 from transformers import AutoProcessor
-from datasets import load_dataset
-from truecase import get_true_case
 from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
@@ -36,12 +34,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             print("Custom chat template not found")
             pass
-        
+
     def _audio_to_features(self, audio):
         audio = audio["array"]
-
         inputs = self.processor(
-            audio, 
+            audios=audio,
+            audio=audio,
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
             truncation=True,

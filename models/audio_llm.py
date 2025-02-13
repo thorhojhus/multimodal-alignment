@@ -1,6 +1,7 @@
 import transformers
 from models.whisper_modified import WhisperModel
 from models.linear_projector import Projector
+from models.encoders import EncoderWrapper
 import torch
 from torch import nn, Tensor
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ class AudioLLMModel(nn.Module):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = self._create_audio_encoder()
+        self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         self.lm = self._create_lm()
         self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
@@ -27,18 +28,6 @@ class AudioLLMModel(nn.Module):
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
-    def _create_audio_encoder(self) -> WhisperModel:
-        # initialize whisper encoder with flash attention (only encoder to GPU)
-        whisper = transformers.WhisperModel.from_pretrained(
-            self.config.model.processor_model_name,
-            attn_implementation="flash_attention_2",
-            torch_dtype=torch.bfloat16,
-            device_map=None)
-        encoder = whisper.encoder.to("cuda")
-        # freeze encoder parameters
-        for param in encoder.parameters():
-            param.requires_grad = False
-        return encoder
 
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
@@ -65,7 +54,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_projector(self) -> Projector:
         # get dimensions for projector
-        whisper_dim = self.audio_encoder.config.d_model
+        whisper_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
@@ -82,6 +71,7 @@ class AudioLLMModel(nn.Module):
         # encode and project audio features
         with torch.no_grad():
             audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
 
     def _combine_embeddings(
@@ -102,7 +92,6 @@ class AudioLLMModel(nn.Module):
                 idx = insertion_indices[i][0].item()
                 # insert audio embeddings at specified position
                 combined_embeds = torch.cat([embeds[:idx], audio_embeds[i], embeds[idx:]], dim=0)
-                
                 if lbls is not None:
                     # mark audio positions with -100 in labels
                     audio_labels = torch.full((D,), -100, dtype=lbls.dtype, device=lbls.device)
