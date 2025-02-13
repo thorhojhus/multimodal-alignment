@@ -50,13 +50,14 @@ class EncoderWrapper(AutoModel):
         match self.encoder_type:
             case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
                 return self.audio_encoder.config.d_model
+            
             case EncoderEnum.CLAP: 
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
         match self.encoder_type:
-            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
                 return audio_encoded
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
