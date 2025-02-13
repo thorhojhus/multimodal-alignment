@@ -34,7 +34,7 @@ def main(cfg: DictConfig):
     
     WER_ERRORS = []
 
-    for _, batch in enumerate(dataloader):
+    for idx, batch in enumerate(dataloader):
         audio = batch["audio"]
         input_features = processor(audio["array"][0], sampling_rate=audio["sampling_rate"][0], return_tensors="pt").input_features
         reference = processor.tokenizer._normalize(batch['text'][0])
@@ -42,7 +42,10 @@ def main(cfg: DictConfig):
             predicted_ids = model.generate(input_features.to("cuda"))[0]
         transcription = processor.decode(predicted_ids)
         prediction = processor.tokenizer._normalize(transcription)
-        WER_ERRORS.append(jiwer.compute_measures(reference, prediction))
+        output = jiwer.compute_measures(reference, prediction)
+        WER_ERRORS.append(output.wer)
+        if ifx%100 == 0:
+            logger.info(f"Iter {idx}: {output.wer:.2f}")
         
     logger.info(f"WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
     
