@@ -7,15 +7,12 @@ from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any, Union
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
-
-@dataclass
-class AudioLLMConfig:
-    downsample_factor: int = 8
-    lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
-    encoder_model_name: str = "openai/whisper-base"
+from liger_kernel.transformers.functional import liger_kl_div
+from torch.nn import functional as F
+from types import SimpleNamespace
 
 class AudioLLMModel(nn.Module):
-    def __init__(self, config: AudioLLMConfig):
+    def __init__(self, config):
         super().__init__()
         self.config = config
         # create model components
@@ -31,14 +28,25 @@ class AudioLLMModel(nn.Module):
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
+
     def _create_lm(self) -> nn.Module:
+        # set quantization configuration
+        quantization_config = transformers.BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
-            self.config.lm_model_name,
+            self.config.model.lm_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
-            device_map="cuda"
+            device_map="cuda",
+            quantization_config=quantization_config if self.config.model.load_in_4bit else None
         )
+
         # freeze lm parameters
         for param in lm.parameters():
             param.requires_grad = False
@@ -48,11 +56,11 @@ class AudioLLMModel(nn.Module):
         # get dimensions for projector
         whisper_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-        return Projector(whisper_dim, embed_dim, self.config.downsample_factor).to("cuda", torch.bfloat16)
+        return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
         # initialize tokenizer from language model
-        return transformers.AutoTokenizer.from_pretrained(self.config.lm_model_name)
+        return transformers.AutoTokenizer.from_pretrained(self.config.model.lm_model_name)
 
     def _add_special_token(self) -> None:
         # add audio token if not in vocabulary
@@ -134,7 +142,9 @@ class AudioLLMModel(nn.Module):
 
     def forward(
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
-        attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None
+        attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
+        alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
+        alt_labels: Optional[Tensor] = None, **kwargs
     ) -> Any:
                 
         # process audio and text features
@@ -146,12 +156,21 @@ class AudioLLMModel(nn.Module):
             text_embeds, audio_embeds, insertion_indices, labels, attention_mask
         )
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
-        # forward pass through language model
+
+        # calculate KL loss if specified
+        if self.config.training.kl_loss:
+            lm_output = self.lm.forward(
+                inputs_embeds=combined_embeds,
+                attention_mask=combined_attention_mask,
+            )
+            return self._compute_kl_loss(lm_output=lm_output, labels=combined_labels, alt_input_ids=alt_input_ids, alt_labels=alt_labels)
+        
+        # forward pass through language model (cross-entropy loss)
         return self.lm(
-            inputs_embeds=combined_embeds,
-            attention_mask=combined_attention_mask,
-            labels=combined_labels
-        )
+                inputs_embeds=combined_embeds,
+                attention_mask=combined_attention_mask,
+                labels=combined_labels
+            )
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
@@ -175,19 +194,54 @@ class AudioLLMModel(nn.Module):
             "pad_token_id": self.pad_token_id,
             **generation_kwargs
         }
-
         # generate text completions
         return self.lm.generate(
             inputs_embeds=combined_embeds,
             attention_mask=combined_attention_mask,
             **generation_config
         )
+
+    def _compute_kl_loss(
+        self,
+        lm_output: transformers.modeling_outputs.CausalLMOutputWithPast,
+        labels: Optional[torch.Tensor] = None,
+        alt_input_ids: Optional[torch.Tensor] = None,
+        alt_attention_mask: Optional[torch.Tensor] = None,
+        alt_labels: Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        with torch.no_grad():
+            alt_inputs_embeds = self.lm.get_input_embeddings().forward(alt_input_ids)
+            alt_lm_output = self.lm.forward(
+                inputs_embeds=alt_inputs_embeds,
+                attention_mask=alt_attention_mask,
+                **kwargs,
+            )
+
+        kl_loss = liger_kl_div(
+            F.log_softmax(
+                lm_output.logits[labels != -100] / self.config.training.kl_temp, dim=-1,
+            ),
+            F.softmax(
+                alt_lm_output.logits[alt_labels != -100] / self.config.training.kl_temp, dim=-1,
+            ),
+            reduction="batchmean",
+        )
+        return SimpleNamespace(loss=kl_loss)
     
 if __name__ == "__main__":
     B = 2
     T = 1024
-
-    config = AudioLLMConfig()
+    config = SimpleNamespace(
+        model=SimpleNamespace(
+            whisper_model_name="openai/whisper-base",
+            lm_model_name="HuggingFaceTB/SmolLM2-360M-Instruct",
+            downsample_factor=10
+        ),
+        training=SimpleNamespace(
+            kl_loss=True
+        )
+    )
     model = AudioLLMModel(config)
 
     # create a dummy batch where some positions are the audio token.
