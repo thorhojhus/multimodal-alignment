@@ -34,12 +34,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             print("Custom chat template not found")
             pass
-    
-    #LAIN CLAP: input.input_features.shape   = [1, 1, 1001, 64]
-	#           audio_features_encoded.shape = [8, 768, 2, 32]
-    #
-    #WHISPER:   input.input_features.shape   = [1, 80, 3000]
-	#           audio_features_encoded.shape = [8, 1500, 512]
 
     def _audio_to_features(self, audio):
         audio = audio["array"]
