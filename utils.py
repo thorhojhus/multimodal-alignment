@@ -3,7 +3,7 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
-from torch.utils.data import Dataset
+import functools
 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
@@ -75,7 +75,7 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     test_loader = DataLoader(
         test_dataset,
         batch_size=n_samples,
-        collate_fn=collate_fn,
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer),
         shuffle=True
     )
     model_name = config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
