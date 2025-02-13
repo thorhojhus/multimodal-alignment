@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup, ClapTextModel
-from models.audio_llm import AudioLLMModel, AudioLLMConfig
+from models.audio_llm import AudioLLMModel
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
 from omegaconf import DictConfig
@@ -84,6 +84,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
             audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
+            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             
@@ -92,6 +94,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 input_ids=input_ids,
                 audio_features=audio_features,
                 labels=labels,
+                alt_input_ids=alt_input_ids,
+                alt_labels=alt_labels,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices
             )
@@ -115,6 +119,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 current_lr = scheduler.get_last_lr()[0]
                 memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
                 memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
+                torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
@@ -137,7 +142,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
                 with torch.inference_mode():
-                    run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples)
+                    run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
             
             # reset batch timer
             batch_start_time = time.monotonic()
@@ -162,12 +167,13 @@ def main(cfg: DictConfig):
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
-    config = AudioLLMConfig(
-        downsample_factor=cfg.model.downsample_factor,
-        lm_model_name=cfg.model.lm_model_name,
-        processor_model_name=cfg.model.processor_model_name
-    )
-    model = AudioLLMModel(config)
+    model = AudioLLMModel(config=cfg)
+    # config = AudioLLMConfig(
+    #     downsample_factor=cfg.model.downsample_factor,
+    #     lm_model_name=cfg.model.lm_model_name,
+    #     processor_model_name=cfg.model.processor_model_name
+    # )
+    #model = AudioLLMModel(config)
     
     # create dataset and processor
     processor = AutoProcessor.from_pretrained(cfg.model.processor_model_name)
