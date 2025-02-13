@@ -51,7 +51,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             truncation=True,
             #max_length=audio.size
         )
-        return inputs.input_features[0][0]
+        return inputs.input_features[0]
 
     def _format_chat(self, example):
         if self.lm_model_name != "gemma":
