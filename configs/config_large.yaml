@@ -9,7 +9,7 @@ model:
   inter_dim: 4096
   downsample_factor: 10
   lm_model_name: "HuggingFaceTB/SmolLM2-1.7B-Instruct"
-  processor_model_name: "openai/whisper-large-v3-turbo"
+  encoder_model_name: "openai/whisper-large-v3-turbo"
 
 training:
   num_epochs: 1

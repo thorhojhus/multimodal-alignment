@@ -16,7 +16,7 @@ class AudioLLMModel(nn.Module):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = EncoderWrapper(config.encoder_model_name)
+        self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         self.lm = self._create_lm()
         self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()

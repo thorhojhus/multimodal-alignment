@@ -22,7 +22,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.processor_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now().timestamp()}",
+        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now().timestamp()}",
         config=dict(runtime_config)
     )
 
@@ -36,7 +36,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.processor_model_name)
+        processor=AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
     )
     
     print_parameter_count(model, logger)
@@ -169,16 +169,11 @@ def main(cfg: DictConfig):
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
 
-    config = AudioLLMConfig(
-        downsample_factor=cfg.model.downsample_factor,
-        lm_model_name=cfg.model.lm_model_name,
-        encoder_model_name=cfg.model.processor_model_name
-    )
-    model = AudioLLMModel(config)
+    model = AudioLLMModel(cfg)
 
     
     # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.processor_model_name)
+    processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
     dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
