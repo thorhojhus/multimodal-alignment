@@ -183,9 +183,6 @@ def main(cfg: DictConfig):
     )
     
     # freeze non-trainable components
-    # NOTE: Encoder in model is done by the wrapper model.
-    #for param in model.audio_encoder.audio_encoder.parameters():
-    #    param.requires_grad = False
     for param in model.lm.parameters():
         param.requires_grad = False
 
