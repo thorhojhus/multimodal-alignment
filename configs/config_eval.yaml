@@ -1,0 +1,10 @@
+hydra:
+  job:
+    chdir: true
+
+model:
+  third_party_model_id: "openai/whisper-base"
+
+dataset:
+  name: "librispeech"
+  test_split: "test.clean"
