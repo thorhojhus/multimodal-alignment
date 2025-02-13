@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 import torch.utils.data.dataloader
 from torch.utils.data import DataLoader
@@ -8,6 +9,7 @@ from evaluate import load
 from omegaconf import DictConfig
 import torch
 import jiwer
+import wandb
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)
@@ -16,6 +18,13 @@ logger = logging.getLogger(__name__)
 @hydra.main(version_base="1.2", config_path="configs", config_name="config_eval")
 def main(cfg: DictConfig):
     """ Test a third party model"""
+
+    wandb.init(
+        entity="borkeren",
+        project="multimodal-alignment",
+        name=f"model-whisper-test-WER-{datetime.now()}",
+        config=dict(cfg)
+    )
 
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -43,11 +52,13 @@ def main(cfg: DictConfig):
         transcription = processor.decode(predicted_ids)
         prediction = processor.tokenizer._normalize(transcription)
         output = jiwer.compute_measures(reference, prediction)
-        WER_ERRORS.append(output.wer)
-        if ifx%100 == 0:
-            logger.info(f"Iter {idx}: {output.wer:.2f}")
+        WER_ERRORS.append(output["wer"])
+        if idx%100 == 0:
+            logger.info(f"Iter {idx}: {output["wer"]:.2f}")
+            wandb.log({"WER": output["wer"]})
         
     logger.info(f"WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
+    wandb.log({"Average WER": sum(WER_ERRORS) / len(WER_ERRORS)})
     
 
 if __name__ == "__main__":
