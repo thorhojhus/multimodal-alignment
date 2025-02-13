@@ -104,7 +104,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "audio_features": audio_features,
             "labels": labels,
             "alt_input_ids": tokenized_alt,
-            "alt_labels": alt_labels
+            "alt_labels": alt_labels,
             "tokenizer": self.tokenizer, #NOTE: expose internal tokenizer to collate_fn below
         }
 
@@ -191,7 +191,7 @@ def collate_fn(batch):
         "audio_features": audio_features,
         "labels": prepared_labels,
         "attention_mask": prepared_attention_mask,
-        "insertion_indices": prepared_insertion_indices
+        "insertion_indices": prepared_insertion_indices,
         "alt_input_ids": torch.stack(alt_input_ids),
         "alt_labels": torch.stack(alt_labels)
     }

@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup, ClapTextModel
-from models.audio_llm import AudioLLMModel, AudioLLMConfig
+from models.audio_llm import AudioLLMModel
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
 from omegaconf import DictConfig
@@ -95,7 +95,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 audio_features=audio_features,
                 labels=labels,
                 alt_input_ids=alt_input_ids,
-                alt_labels=alt_labels
+                alt_labels=alt_labels,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices
             )
@@ -167,13 +167,13 @@ def main(cfg: DictConfig):
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
-    #model = AudioLLMModel(config=cfg)
-    config = AudioLLMConfig(
-        downsample_factor=cfg.model.downsample_factor,
-        lm_model_name=cfg.model.lm_model_name,
-        processor_model_name=cfg.model.processor_model_name
-    )
-    model = AudioLLMModel(config)
+    model = AudioLLMModel(config=cfg)
+    # config = AudioLLMConfig(
+    #     downsample_factor=cfg.model.downsample_factor,
+    #     lm_model_name=cfg.model.lm_model_name,
+    #     processor_model_name=cfg.model.processor_model_name
+    # )
+    #model = AudioLLMModel(config)
     
     # create dataset and processor
     processor = AutoProcessor.from_pretrained(cfg.model.processor_model_name)

@@ -10,12 +10,6 @@ from liger_kernel.transformers.functional import liger_kl_div
 from torch.nn import functional as F
 from types import SimpleNamespace
 
-@dataclass
-class AudioLLMConfig:
-    downsample_factor: int = 8
-    lm_model_name: str = "HuggingFaceTB/SmolLM2-360M-Instruct"
-    processor_model_name: str = "openai/whisper-base"
-
 class AudioLLMModel(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -36,7 +30,7 @@ class AudioLLMModel(nn.Module):
     def _create_audio_encoder(self) -> WhisperModel:
         # initialize whisper encoder with flash attention (only encoder to GPU)
         whisper = transformers.WhisperModel.from_pretrained(
-            self.config.processor_model_name,
+            self.config.model.processor_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map=None)
@@ -47,8 +41,6 @@ class AudioLLMModel(nn.Module):
         return encoder
 
     def _create_lm(self) -> nn.Module:
-        name = self.config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
-        
         # set quantization configuration
         quantization_config = transformers.BitsAndBytesConfig(
             load_in_4bit=True, 
