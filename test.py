@@ -22,7 +22,7 @@ def main(cfg: DictConfig):
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-whisper-test-WER-{datetime.now()}",
+        name=f"model-whisper-{cfg.dataset.name}-{datetime.now()}",
         config=dict(cfg)
     )
 
