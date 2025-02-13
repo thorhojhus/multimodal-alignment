@@ -13,3 +13,4 @@ soundfile
 truecase
 hydra-core
 wandb
+jiwer
