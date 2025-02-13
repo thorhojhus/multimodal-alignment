@@ -2,12 +2,12 @@ import torch
 from transformers import AutoModel
 from transformers import WhisperModel
 from transformers import ClapModel
-from typing import Literal
 from enum import Enum
 
 
 class EncoderEnum(Enum):
     WHISPER = "openai/whisper-base"
+    WHISPER_TURBO = "openai/whisper-large-v3-turbo"
     CLAP = "laion/clap-htsat-unfused"
 
 
@@ -21,7 +21,7 @@ class EncoderWrapper(AutoModel):
         """Initialize/load the encoder."""
 
         match self.encoder_type:
-            case EncoderEnum.WHISPER:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO:
                 whisper = WhisperModel.from_pretrained(
                     self.encoder_type.value,
                     attn_implementation="flash_attention_2",
@@ -47,7 +47,7 @@ class EncoderWrapper(AutoModel):
     def get_proj_dim(self):
         """Return the projection dimension we expect the Audio Projection Layer to receive."""
         match self.encoder_type:
-            case EncoderEnum.WHISPER:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO:
                 return self.audio_encoder.config.d_model
             case EncoderEnum.CLAP: 
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
@@ -55,7 +55,7 @@ class EncoderWrapper(AutoModel):
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
         match self.encoder_type:
-            case EncoderEnum.WHISPER:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO:
                 return audio_encoded
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
