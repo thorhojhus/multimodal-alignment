@@ -1,6 +1,6 @@
 import logging
 import torch.utils.data.dataloader
-
+from torch.utils.data import DataLoader
 import torch
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import hydra
@@ -31,23 +31,23 @@ def main(cfg: DictConfig):
         from dataset.load_coral import coral_dataset_dict
         dataset = coral_dataset_dict["test"]
 
-
+    dataloader = DataLoader(dataset, batch_size=1)
     processor = WhisperProcessor.from_pretrained(cfg.model.third_party_model_id)
     model = WhisperForConditionalGeneration.from_pretrained(cfg.model.third_party_model_id).to("cuda")
-    def map_to_pred(batch):
-        breakpoint()
+    
+    WER_ERRORS = []
+
+    for _, batch in enumerate(dataloader):
         audio = batch["audio"]
         input_features = processor(audio["array"], sampling_rate=audio["sampling_rate"], return_tensors="pt").input_features
-        batch["reference"] = processor.tokenizer._normalize(batch['text'])
+        reference = processor.tokenizer._normalize(batch['text'])
         with torch.no_grad():
             predicted_ids = model.generate(input_features.to("cuda"))[0]
         transcription = processor.decode(predicted_ids)
-        batch["prediction"] = processor.tokenizer._normalize(transcription)
-        return batch
-    
-    result = dataset.map(map_to_pred)
-    output = jiwer.process_words(result["reference"], result["prediction"])
-    logger.info(f"Done with WER: {output.wer:.2f}")
+        prediction = processor.tokenizer._normalize(transcription)
+        WER_ERRORS.append(jiwer.compute_measures(reference, prediction))
+        
+    logger.info(f"WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
     
 
 if __name__ == "__main__":
