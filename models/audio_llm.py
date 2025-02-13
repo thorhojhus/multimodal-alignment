@@ -54,9 +54,9 @@ class AudioLLMModel(nn.Module):
 
     def _create_projector(self) -> Projector:
         # get dimensions for projector
-        whisper_dim = self.audio_encoder.get_proj_dim()
-        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-        return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        audio_embed_dim = self.audio_encoder.get_proj_dim()
+        text_embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return Projector(audio_embed_dim, text_embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
         # initialize tokenizer from language model

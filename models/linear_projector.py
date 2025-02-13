@@ -5,16 +5,16 @@ from torch.nn import functional as F
 from liger_kernel.transformers import LigerRMSNorm as RMSNorm
 
 class Projector(nn.Module):
-    def __init__(self, whisper_dim: int, embed_dim: int, downsample_factor: int):
+    def __init__(self, audio_embed_dim: int, text_embed_dim: int, downsample_factor: int):
         super().__init__()
-        self.pre_ln = RMSNorm(whisper_dim)
+        self.pre_ln = RMSNorm(audio_embed_dim)
         self.downsample_factor = downsample_factor
         # initial projection from whisper dimensions
-        self.linear1 = nn.Linear(in_features=whisper_dim, out_features=embed_dim, bias=False)
+        self.linear1 = nn.Linear(in_features=audio_embed_dim, out_features=text_embed_dim, bias=False)
         self.act = nn.SiLU()
         # combined downsampling and final projection
-        self.downsample_proj = nn.Linear(downsample_factor * embed_dim, embed_dim, bias=False)
-        self.post_ln = RMSNorm(embed_dim)
+        self.downsample_proj = nn.Linear(downsample_factor * text_embed_dim, text_embed_dim, bias=False)
+        self.post_ln = RMSNorm(text_embed_dim)
         
     def _pad_sequence(self, hidden_states: Tensor) -> Tuple[Tensor, int]:
         # pad if sequence length is not divisible by downsample_factor
