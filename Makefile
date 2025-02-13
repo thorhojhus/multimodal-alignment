@@ -23,6 +23,8 @@ venv:
 	python$(PYTHON_VERSION) -m venv .venv
 	@echo "Upgrading pip in the virtual environment..."
 	.venv/bin/pip install --upgrade pip
+	@echo "Upgrading setuptools in the virtual environment..."
+	.venv/bin/pip pip install --upgrade setuptools
 	@echo "Installing Python dependencies from requirements.txt in the virtual environment..."
 	.venv/bin/pip install -r requirements.txt
 	@echo "Installing flash-attn with --no-build-isolation in the virtual environment..."
