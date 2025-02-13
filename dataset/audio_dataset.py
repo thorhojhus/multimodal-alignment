@@ -103,7 +103,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "labels": labels,
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
-            "tokenizer": self.tokenizer, #NOTE: expose internal tokenizer to collate_fn below
         }
 
 
