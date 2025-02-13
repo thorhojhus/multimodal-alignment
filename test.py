@@ -36,8 +36,8 @@ def main(cfg: DictConfig):
 
     for _, batch in enumerate(dataloader):
         audio = batch["audio"]
-        input_features = processor(audio["array"], sampling_rate=audio["sampling_rate"], return_tensors="pt").input_features
-        reference = processor.tokenizer._normalize(batch['text'])
+        input_features = processor(audio["array"][0], sampling_rate=audio["sampling_rate"][0], return_tensors="pt").input_features
+        reference = processor.tokenizer._normalize(batch['text'][0])
         with torch.no_grad():
             predicted_ids = model.generate(input_features.to("cuda"))[0]
         transcription = processor.decode(predicted_ids)
