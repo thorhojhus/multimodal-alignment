@@ -63,6 +63,7 @@ class AudioLLMModel(nn.Module):
         # encode and project audio features
         with torch.no_grad():
             audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
 
     def _combine_embeddings(
@@ -83,7 +84,6 @@ class AudioLLMModel(nn.Module):
                 idx = insertion_indices[i][0].item()
                 # insert audio embeddings at specified position
                 combined_embeds = torch.cat([embeds[:idx], audio_embeds[i], embeds[idx:]], dim=0)
-                
                 if lbls is not None:
                     # mark audio positions with -100 in labels
                     audio_labels = torch.full((D,), -100, dtype=lbls.dtype, device=lbls.device)
