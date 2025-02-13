@@ -1,6 +1,7 @@
 import logging
 import time
 import wandb
+import functools
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
@@ -49,7 +50,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=collate_fn, 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer), 
         shuffle=True, 
         pin_memory=True
     )

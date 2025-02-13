@@ -103,9 +103,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "input_ids": tokenized,
             "audio_features": audio_features,
             "labels": labels,
+<<<<<<< Updated upstream
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
             "tokenizer": self.tokenizer, #NOTE: expose internal tokenizer to collate_fn below
+=======
+>>>>>>> Stashed changes
         }
 
 
@@ -153,7 +156,7 @@ def prepare_inputs(
     return new_input_ids, new_attention_mask, new_labels, insertion_indices
 
 
-def collate_fn(batch):
+def collate_fn(batch, tokenizer):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
@@ -163,7 +166,6 @@ def collate_fn(batch):
     audio_features = []
     alt_input_ids = []
     alt_labels = []
-    tokenizer = batch[-1]["tokenizer"]
     
     for item in batch:
         # pad input_ids and labels
