@@ -22,16 +22,16 @@ venv:
 	@echo "Creating virtual environment '.venv' with Python $(PYTHON_VERSION)..."
 	python$(PYTHON_VERSION) -m venv .venv
 	@echo "Upgrading pip in the virtual environment..."
-	.venv/bin/pip install --upgrade pip
+	.venv/bin/pip install uv
 	@echo "Upgrading setuptools in the virtual environment..."
-	.venv/bin/pip pip install --upgrade setuptools
+	.venv/bin/pip install --upgrade setuptools
 	@echo "Installing Python dependencies from requirements.txt in the virtual environment..."
-	.venv/bin/pip install -r requirements.txt
+	.venv/bin/uv pip install -r requirements.txt
 	@echo "Installing flash-attn with --no-build-isolation in the virtual environment..."
 	.venv/bin/pip install flash-attn --no-build-isolation
 
 clean:
-	@echo "Removing Conda environment '$(ENV_NAME)'..."
-	conda remove -y -n $(ENV_NAME) --all
+	# @echo "Removing Conda environment '$(ENV_NAME)'..."
+	# conda remove -y -n $(ENV_NAME) --all
 	@echo "Removing virtual environment directory '.venv'..."
 	rm -rf .venv

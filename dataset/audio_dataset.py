@@ -1,10 +1,14 @@
 import torch
 from torch import Tensor
-from transformers import AutoProcessor
+from transformers import AutoProcessor, AutoTokenizer
 from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
 
 class AudioChatDataset(torch.utils.data.Dataset):
-    def __init__(self, lm_model: str, dataset="coral", split="train.clean.100", tokenizer=None, processor=None):
+    def __init__(self, 
+                 lm_model: str="HuggingFaceTB/SmolLM2-360M-Instruct",
+                 dataset: str="coral", split="train.clean.100", 
+                 tokenizer=None, 
+                 processor=None):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
 
         if dataset == "coral":
@@ -15,6 +19,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             self.dataset = librispeech_dataset_dict[str(split)]
         else:
             print("Unsupported dataset")
+        if tokenizer is None:
+            tokenizer = AutoTokenizer.from_pretrained(lm_model)
         self.tokenizer = tokenizer
         self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
