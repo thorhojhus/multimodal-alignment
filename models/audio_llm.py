@@ -42,7 +42,7 @@ class AudioLLMModel(nn.Module):
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
-            attn_implementation="eager",#"flash_attention_2 if "gemma" not in self.config.model.lm_model_name else "eager",
+            attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config if self.config.model.load_in_4bit else None
@@ -188,10 +188,6 @@ class AudioLLMModel(nn.Module):
             text_embeds, audio_embeds, insertion_indices, attention_mask=attention_mask
         )
         combined_embeds, _, combined_attention_mask = self._pad_sequences(combined_lists)
-        print("combined_embeds")
-        print(combined_embeds.shape)
-        print("combined_attention_mask")
-        print(combined_attention_mask.shape)
 
         # prepare generation configuration
         generation_config = {

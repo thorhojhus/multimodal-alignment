@@ -51,7 +51,9 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         dataset, 
         batch_size=cfg.training.batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer), 
-        shuffle=True, 
+        shuffle=True,
+        num_workers=8,
+        prefetch_factor=2,
         pin_memory=True
     )
     
@@ -165,6 +167,8 @@ def main(cfg: DictConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra

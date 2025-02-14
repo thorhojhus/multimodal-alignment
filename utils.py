@@ -123,16 +123,6 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         ground_truth = get_ground_truth(batch["input_ids"][i], model_name)
         user_prompt_mask = torch.ones_like(user_prompt)
 
-        print("User prompt")
-        print(user_prompt.shape)
-        print("Audio features")
-        print(batch["audio_features"][i].shape)
-        print("Insertion indices")
-        print(batch["insertion_indices"][i].shape)
-        print("Attention mask")
-        print(batch["attention_mask"][i].shape)
-
-
         # generate completions
         with torch.inference_mode():
             outputs = model.generate(
