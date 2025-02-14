@@ -133,6 +133,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.seamless_venv
 env/
 venv/
 ENV/
@@ -189,6 +190,7 @@ tex/src/report.synctex.gz
 *.aux
 *.lof
 *.log
+*.err
 *.lot
 *.fls
 *.out
