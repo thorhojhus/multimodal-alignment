@@ -7,6 +7,7 @@ from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any, Union
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
+from transformers import AutoModelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch.nn import functional as F
 from types import SimpleNamespace
@@ -41,7 +42,7 @@ class AudioLLMModel(nn.Module):
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
-            attn_implementation="flash_attention_2",
+            attn_implementation="eager",#"flash_attention_2 if "gemma" not in self.config.model.lm_model_name else "eager",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config if self.config.model.load_in_4bit else None
@@ -187,6 +188,10 @@ class AudioLLMModel(nn.Module):
             text_embeds, audio_embeds, insertion_indices, attention_mask=attention_mask
         )
         combined_embeds, _, combined_attention_mask = self._pad_sequences(combined_lists)
+        print("combined_embeds")
+        print(combined_embeds.shape)
+        print("combined_attention_mask")
+        print(combined_attention_mask.shape)
 
         # prepare generation configuration
         generation_config = {
