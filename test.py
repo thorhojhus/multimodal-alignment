@@ -22,7 +22,7 @@ def main(cfg: DictConfig):
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-whisper-{cfg.dataset.name}-{datetime.now()}",
+        name=f"test-model-whisper-{cfg.dataset.name}-{datetime.now()}",
         config=dict(cfg)
     )
 
@@ -45,7 +45,7 @@ def main(cfg: DictConfig):
 
     for idx, batch in enumerate(dataloader):
         audio = batch["audio"]
-        input_features = processor(audio["array"][0], sampling_rate=audio["sampling_rate"][0], return_tensors="pt").input_features
+        input_features = processor(audio["array"][0], sampling_rate=16000, return_tensors="pt").input_features
         reference = processor.tokenizer._normalize(batch['text'][0])
         with torch.no_grad():
             predicted_ids = model.generate(input_features.to("cuda"))[0]
@@ -54,10 +54,12 @@ def main(cfg: DictConfig):
         output = jiwer.compute_measures(reference, prediction)
         WER_ERRORS.append(output["wer"])
         if idx%100 == 0:
-            logger.info(f"Iter {idx}: {output["wer"]:.2f}")
+            logger.info(f"Iter: {idx} | WER: {output["wer"]:.2f}")
+            logger.info(f"Expected: {reference}")
+            logger.info(f"predicted: {prediction}")
             wandb.log({"WER": output["wer"]})
         
-    logger.info(f"WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
+    logger.info(f"Average WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
     wandb.log({"Average WER": sum(WER_ERRORS) / len(WER_ERRORS)})
     
 
