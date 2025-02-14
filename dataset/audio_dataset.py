@@ -11,7 +11,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  tokenizer=None, 
                  processor=None):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
-        self.dataset_name = dataset
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -44,15 +43,15 @@ class AudioChatDataset(torch.utils.data.Dataset):
 
     def _audio_to_features(self, audio):
         audio_array = torch.tensor(audio["array"], dtype=torch.float32)
+        audio_sampling_rate = audio["sampling_rate"]
+        target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
-        # resample if using Coral dataset
-        if self.dataset_name == "coral":
-            audio_array = torchaudio.functional.resample(audio_array, orig_freq=48000, new_freq=16000).numpy()
+        audio_array = torchaudio.functional.resample(audio_array, orig_freq=audio_sampling_rate, new_freq=target_sampling_rate).numpy()
 
         inputs = self.processor(
             audios=audio_array,
             audio=audio_array,
-            sampling_rate=self.processor.feature_extractor.sampling_rate,
+            sampling_rate=target_sampling_rate,
             return_tensors="pt",
             truncation=True,
         )
