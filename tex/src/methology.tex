@@ -1,12 +1,14 @@
 
-In this section we will summarize the most critical methods and parts of the pipeline we have used in our experiments. We will cover the data preprocessing, the models we have used and some of their internal processing, as well as the evaluation metrics we have used to evaluate the models and compare them. 
+In this section we will summarize the most critical methods and parts of the pipeline we have used in our experiments. We will cover the data preprocessing, the models we have used and some of their internal processing, as well as the evaluation metrics we have used to evaluate the models and compare them.
 
-\subsubsection{Audio Encoding - Fourier Transform}
+Starting off with processing of audio signals, we will cover the Fourier Transform and the Short-time Fourier Transform, which are the basis for the spectrogram representation of audio signals. We will then cover the models we have used in our experiments, and how they have been trained and evaluated. Finally, we will cover the evaluation metrics we have used to evaluate the models.
+
+\subsubsection{Fourier Transform}
 % Lige nu en omskrivning fra vores FITS paper.
 
-Audio is the primary domain, along the textual domain, this thesis revolves around. Therefore, it is important to cover the basics of audio processing and how we have utilized it in our experiments and how the litterature has used it in similar experiments.
+Audio is the primary domain, along with the textual domain, that this thesis and its research revolves around. Therefore, it is important to cover the basics of audio processing and how we have utilized it in our experiments and how the litterature has used it in similar experiments.
 
-Starting off with the fourier transform, which is a broadly used method for decomposing a function of time, as audio data primarily is, into the many frequencies for which the function consists of. As such the Fourier Transform is a mapping from the time domain into the frequency domain. The fourier transform is a very powerful tool to disassemble the different frequencies in our data, and it is a crucial step for many modern applications for dealing with audio signals.
+The fourier transform is the primary and most common method for decomposing a signal in the time domain, where audio data primarily is found, into the many frequencies for which the function consists of. As such the Fourier Transform is a mapping from the time domain into the frequency domain. The fourier transform is a very powerful tool to disassemble the different frequencies in our data, and it is a crucial step for many modern applications for dealing with audio signals.
 
 The formula for a continuous Fourier transform is 
 $$
@@ -24,7 +26,7 @@ In many applications related with computer science, it is natural to sample a co
 
 \begin{equation}
     X_k = \sum_{n=0}^{N-1} x_n \cdot e^{-i \frac{2\pi}{N} nk}, \quad k = 0, 1, \ldots, N-1
-\label{eq:fft}
+    \label{eq:fft}
 \end{equation}
 
 Utilizing equation \ref{eq:fft} directly to calculate the DFT of a signal would be costly procedure. The reason is clear from the formula - For each data point, for which there are $N$ of, a sum of length $N$ is performed. As such, the time complexity of the processing is proportional to the squared length of the signal we wish to transform i.e., in big O notation it has the complexity of $O(N^2)$.
@@ -33,24 +35,38 @@ Utilizing equation \ref{eq:fft} directly to calculate the DFT of a signal would 
 
 To address this inefficiency, we use the Fast Fourier Transform (FFT), which is an optimized algorithm for computing the Fourier transform. The FFT significantly reduces the computational cost by exploiting the symmetry and periodicity properties of the DFT. The FFT algorithm reduces the time complexity to $O(N \log N)$, making it much more feasible for practical applications.
 
-The FFT often used is the Cooley-Tukey algorithm, which operates by recursively breaking down a DFT of any composite size $N = N_1N_2$ into many smaller DFTs of sizes $N_1$ and $N_2$, simplifying the computation. This divide-and-conquer approach leverages the efficiency of smaller DFTs to compute the larger one more quickly. The steps of the Cooley-Tukey algorithm are described in further detail in the appendix \ref{appendix:FFT}.
+The FFT often used is the Cooley-Tukey algorithm, which operates by recursively breaking down a DFT of any composite size $N = N_1N_2$ into many smaller DFTs of sizes $N_1$ and $N_2$, simplifying the computation. This divide-and-conquer approach leverages the efficiency of smaller DFTs to compute the larger one more quickly.
 
+\subsubsection{Real-valued Fast Fourier Transform}
 
-\textbf{Real Valued Fast Fourier Transform}
-
-A simple increase in computational efficiency is possible when working with real valued data, $X \in \mathbb{R}$. In such case, only approximately half the computations are required to perform the FFT, as the output will be complex conjugates of one-another:
-
-\subsubsection{Short-time Fourier transform}
-
-Relevant for Spectrograms
-
-$$
-\textrm{STFT}(\tau, \omega) = \int_{-\infty}^{\infty} f(t) \cdot w(t - \tau) \cdot e^{-i\omega t} \, dt
-$$
+A simple increase in computational efficiency is possible when working with real valued data, $X \in \mathbb{R}$. In such case, only approximately half the computations are required to perform the FFT, as the output will be complex conjugates of one-another
 
 \begin{equation*}
     X_k = \overline{X_{N-k}}, \quad \forall k \in \left[1, \left\lfloor\frac{N}{2}\right\rfloor\right]
 \end{equation*}
 
+While the asymptotic runtime of the algorithm won't change, the constant time factor will be halved with can be noteable
+
+\subsubsection{Short-time Fourier transform}
+
+It is also possible of course to run the fourier transform over a smaller window of the signal. The window need not be equal across it either.
+
+\begin{equation}
+    \textrm{STFT}(\tau, \omega) = \int_{-\infty}^{\infty} f(t) \cdot w(t - \tau) \cdot e^{-i\omega t} \, dt
+    \label{eq:stft}
+\end{equation}
+
 \subsection{Spectograms}
-A spectrogram is a representation of how a signal's frequencies varies over time.However, the fourier transform applied to a continuous signal of arbitrary length. Therefore, it is usually constructed by allowing a moving windows to fall over the audio signal, for which each window pass genereates the frequency domain representation of the signal. Stacking all these windows representations will allow one to construct the spectrogram of the signal. The short time fourier transform is exactly the one used in computing the spectrogram for an audio signal.
+A spectrogram is a representation of how a signal's frequencies varies over time.However, the fourier transform applied to a continuous signal of arbitrary length. Therefore, it is usually constructed by allowing a moving windows to fall over the audio signal, for which each window pass genereates the frequency domain representation of the signal. Stacking all these windows representations will allow one to construct the spectrogram of the signal. 
+
+The short time fourier transform is exactly the one used in computing the spectrogram for an audio signal. However, additional steps are required. In order to retrieve our spectrogram, we have to square the energy levels (amplitudes) of the output
+\begin{equation}
+    |STFT(\tau, \omega)|^2 = \left| \int_{-\infty}^{\infty} f(t) \cdot w(t - \tau) \cdot e^{-i\omega t} \, dt \right|^2
+\end{equation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/SpectrogramViolin.png}
+    \caption{An example of a spectrogram for a audio signal. Here it is of a violin playing a few notes. Notice how the notes have a base frequency from which its integer multiples are also highlighted. We can see where each note is changed as the violing is played. Source: \href{https://upload.wikimedia.org/wikipedia/commons/2/29/Spectrogram_of_violin.png}{wikipedia}}
+    \label{fig:spectrogram}
+\end{figure}
