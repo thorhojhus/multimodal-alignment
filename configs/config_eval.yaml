@@ -3,7 +3,7 @@ hydra:
     chdir: true
 
 model:
-  third_party_model_id: "openai/whisper-base"
+  third_party_model_id: "openai/whisper-large-v3-turbo"
 
 dataset:
   name: "librispeech"

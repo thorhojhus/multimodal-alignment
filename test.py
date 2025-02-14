@@ -18,16 +18,12 @@ logger = logging.getLogger(__name__)
 def main(cfg: DictConfig):
     """ Test a third party model"""
 
-    wandb.init(
-        entity="borkeren",
-        project="multimodal-alignment",
-        name=f"test-model-whisper-{cfg.dataset.name}-{datetime.now()}",
-        config=dict(cfg)
-    )
-
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+
+    processor = WhisperProcessor.from_pretrained(cfg.model.third_party_model_id)
+    model = WhisperForConditionalGeneration.from_pretrained(cfg.model.third_party_model_id).to("cuda")
 
     if cfg.dataset.name == "librispeech":
         from dataset.load_librispeech import librispeech_dataset_dict
@@ -35,24 +31,29 @@ def main(cfg: DictConfig):
     elif cfg.dataset.name == "coral":
         from dataset.load_coral import coral_dataset_dict
         dataset = coral_dataset_dict["test"]
+        processor.get_decoder_prompt_ids(language="danish", task="transcribe")
 
     dataloader = DataLoader(dataset, batch_size=1)
-    processor = WhisperProcessor.from_pretrained(cfg.model.third_party_model_id)
-    model = WhisperForConditionalGeneration.from_pretrained(cfg.model.third_party_model_id).to("cuda")
 
     need_resample = dataset[0]["audio"]["sampling_rate"] != processor.feature_extractor.sampling_rate
     if need_resample:
         print("Resampling is required")
-        resampler = Resample(dataset[0]["audio"]["sampling_rate"], processor.feature_extractor.sampling_rate)
+        resampler = Resample(dataset[0]["audio"]["sampling_rate"], processor.feature_extractor.sampling_rate, dtype=torch.float64)
     else:
         print("Resampling is not required")
-        
     
     WER_ERRORS = []
 
+    wandb.init(
+        entity="borkeren",
+        project="multimodal-alignment",
+        name=f"test-model-{cfg.model.third_party_model_id.split("/", maxsplit=1)[-1]}-{cfg.dataset.name}-{datetime.now()}",
+        config=dict(cfg)
+    )
+
     for idx, batch in enumerate(dataloader):
         audio = batch["audio"]
-        preprocessed_audio = resampler(audio["array"][0], resampler) if need_resample else audio["array"][0]
+        preprocessed_audio = resampler(audio["array"][0].unsqueeze(0)).squeeze(0) if need_resample else audio["array"][0]
         input_features = processor(preprocessed_audio, sampling_rate=processor.feature_extractor.sampling_rate, return_tensors="pt").input_features
         reference = processor.tokenizer._normalize(batch['text'][0])
         with torch.no_grad():
