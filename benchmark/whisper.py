@@ -11,7 +11,7 @@ from dataset.load_coral import coral_dataset_dict
 torch.set_float32_matmul_precision('high')
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
+torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.enabled = True
 
@@ -109,7 +109,6 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
         )
     
     predictions = processor.batch_decode(generated, skip_special_tokens=True)
-    
     batch_wer = wer(batch_refs, predictions)
     batch_cer = cer(batch_refs, predictions)
     total_wer += batch_wer

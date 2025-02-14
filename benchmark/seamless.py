@@ -10,7 +10,7 @@ from dataset.load_coral import coral_dataset_dict
 torch.set_float32_matmul_precision('high')
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-torch.cuda.set_per_process_memory_fraction(0.7, device=torch.cuda.current_device())
+torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.enabled = True
 
@@ -58,7 +58,7 @@ test_dataset = CoralTestDataset(test_data)
 loader = DataLoader(
     test_dataset,
     batch_size=256,
-    num_workers=16,
+    num_workers=8,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn,
