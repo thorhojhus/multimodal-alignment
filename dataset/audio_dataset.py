@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
 from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
+import torchaudio
 
 class AudioChatDataset(torch.utils.data.Dataset):
     def __init__(self, 
@@ -10,7 +11,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  tokenizer=None, 
                  processor=None):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
-
+        self.dataset_name = "coral"
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -42,16 +43,22 @@ class AudioChatDataset(torch.utils.data.Dataset):
             pass
 
     def _audio_to_features(self, audio):
-        audio = audio["array"]
+        audio_array = torch.tensor(audio["array"], dtype=torch.float32)
+
+        # resample if using Coral dataset
+        if self.dataset_name == "coral":
+            resampler = torchaudio.transforms.Resample(orig_freq=48000, new_freq=16000)
+            audio_array = resampler(audio_array).numpy()
+
         inputs = self.processor(
-            audios=audio,
-            audio=audio,
+            audios=audio_array,
+            audio=audio_array,
             sampling_rate=self.processor.feature_extractor.sampling_rate,
             return_tensors="pt",
             truncation=True,
-            #max_length=audio.size
         )
         return inputs.input_features[0]
+
 
     def _format_chat(self, example, audio):
         if self.lm_model_name != "gemma":

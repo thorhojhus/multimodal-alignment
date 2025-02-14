@@ -30,10 +30,4 @@ module swap cuda/12.8.0
 
 cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
-#python train.py
-#python train.py model.lm_model_name=HuggingFaceTB/SmolLM2-1.7B-Instruct model.encoder_model_name=openai/whisper-large-v3-turbo training.batch_size=32 wandb.enabled=true
-#python train.py model.lm_model_name=google/gemma-2-2b-it model.whisper_model_name=openai/whisper-large-v3-turbo training.batch_size=16 dataset.name=coral
-#python train.py model.lm_model_name=google/gemma-2-9b-it model.whisper_model_name=openai/whisper-large-v3-turbo training.batch_size=8 dataset.name=coral model.load_in_4bit=true
-#python train.py model.lm_model_name=google/gemma-2-9b-it model.whisper_model_name=openai/whisper-large-v3-turbo training.batch_size=16 dataset.name=coral model.load_in_4bit=true
-#python train.py model.lm_model_name=google/gemma-2-9b-it model.whisper_model_name=openai/whisper-large-v3-turbo training.batch_size=16 dataset.name=coral model.load_in_4bit=true training.resume_checkpoint_path=/zhome/5c/8/186818/multimodal-alignment/outputs/2025-02-10/21-46-55/checkpoints/checkpoint_latest.pt training.resume_from_checkpoint=true training.kl_temp=1.0
 python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=32 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
