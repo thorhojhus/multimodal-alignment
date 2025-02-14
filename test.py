@@ -5,15 +5,14 @@ from torch.utils.data import DataLoader
 import torch
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import hydra
-from evaluate import load
 from omegaconf import DictConfig
 import torch
 import jiwer
 import wandb
+from torchaudio.transforms import Resample
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)
-
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config_eval")
 def main(cfg: DictConfig):
@@ -40,12 +39,21 @@ def main(cfg: DictConfig):
     dataloader = DataLoader(dataset, batch_size=1)
     processor = WhisperProcessor.from_pretrained(cfg.model.third_party_model_id)
     model = WhisperForConditionalGeneration.from_pretrained(cfg.model.third_party_model_id).to("cuda")
+
+    need_resample = dataset[0]["audio"]["sampling_rate"] != processor.feature_extractor.sampling_rate
+    if need_resample:
+        print("Resampling is required")
+        resampler = Resample(dataset[0]["audio"]["sampling_rate"], processor.feature_extractor.sampling_rate)
+    else:
+        print("Resampling is not required")
+        
     
     WER_ERRORS = []
 
     for idx, batch in enumerate(dataloader):
         audio = batch["audio"]
-        input_features = processor(audio["array"][0], sampling_rate=16000, return_tensors="pt").input_features
+        preprocessed_audio = resampler(audio["array"][0], resampler) if need_resample else audio["array"][0]
+        input_features = processor(preprocessed_audio, sampling_rate=processor.feature_extractor.sampling_rate, return_tensors="pt").input_features
         reference = processor.tokenizer._normalize(batch['text'][0])
         with torch.no_grad():
             predicted_ids = model.generate(input_features.to("cuda"))[0]
