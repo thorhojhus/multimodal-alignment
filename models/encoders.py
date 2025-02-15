@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModel
 from transformers import WhisperModel
 from transformers import ClapModel
-from transformers import Wav2Vec2Model
+from transformers import Wav2Vec2Model, Wav2Vec2BertModel
 from enum import Enum
 
 
@@ -12,7 +12,7 @@ class EncoderEnum(Enum):
     HVISKE = "syvai/hviske-v2"
     CLAP = "laion/clap-htsat-unfused"
     WAV2VEC = "facebook/wav2vec2-base-960h"
-
+    WAV2VECBERT = "facebook/w2v-bert-2.0"
 
 class EncoderWrapper(AutoModel):
     """As the different audio encoders have different configs, and different input types, wrap the encoders"""
@@ -47,6 +47,12 @@ class EncoderWrapper(AutoModel):
                     torch_dtype=torch.bfloat16,
                     device_map=None
                 ).to("cuda")
+            case EncoderEnum.WAV2VECBERT:
+                encoder = Wav2Vec2BertModel.from_pretrained(
+                    self.encoder_type.value,
+                    torch_dtype=torch.bfloat16,
+                    device_map=None
+                ).to("cuda")
 
         # freeze encoder params
         for param in encoder.parameters():
@@ -61,7 +67,7 @@ class EncoderWrapper(AutoModel):
                 return self.audio_encoder.config.d_model
             case EncoderEnum.CLAP: 
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
-            case EncoderEnum.WAV2VEC:
+            case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
                 return self.audio_encoder.config.hidden_size
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
@@ -72,11 +78,13 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
                 return audio_encoded.permute(0, 2, 3, 1).reshape(B, -1, D)
-            case EncoderEnum.WAV2VEC:
+            case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
                 return audio_encoded
 
     def __call__(self, *args, **kwargs):
-        return self.audio_encoder(*args, **kwargs)
+            if isinstance(args[0], dict):
+                return self.audio_encoder(**args[0])
+            return self.audio_encoder(*args, **kwargs)
 
 if __name__ == "__main__":
     encoder = EncoderWrapper(EncoderEnum.WHISPER.value)

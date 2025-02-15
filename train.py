@@ -31,17 +31,32 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictConfig) -> None:
+def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # create dataset and processor
+    if "w2v-bert" in cfg.model.encoder_model_name:
+        from transformers import AutoFeatureExtractor
+        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+    else:
+        processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+    
+    dataset = AudioChatDataset(
+        lm_model=cfg.model.lm_model_name,
+        dataset=cfg.dataset.name,
+        split=cfg.dataset.split,
+        tokenizer=model.tokenizer,
+        processor=processor
+    )
     
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+        processor=processor,
     )
     
     print_parameter_count(model, logger)
@@ -90,7 +105,15 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
-            audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+            if isinstance(batch["audio_features"], dict):
+                # for wav2vec-bert/seamless models
+                audio_features = {
+                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                }
+            else:
+                # for other models (Whisper, CLAP, wav2vec)
+                audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
@@ -181,17 +204,6 @@ def main(cfg: DictConfig):
 
     model = AudioLLMModel(cfg)
 
-    
-    # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
-    dataset = AudioChatDataset(
-        lm_model=cfg.model.lm_model_name,
-        dataset=cfg.dataset.name,
-        split=cfg.dataset.split,
-        tokenizer=model.tokenizer,
-        processor=processor
-    )
-    
     # freeze non-trainable components
     for param in model.lm.parameters():
         param.requires_grad = False
@@ -199,7 +211,7 @@ def main(cfg: DictConfig):
     if cfg.wandb.enabled:
         setup_wandb(cfg)
     
-    train(model, dataset, cfg)
+    train(model, cfg)
 
 if __name__ == "__main__":
     main()

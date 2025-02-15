@@ -2,6 +2,7 @@ import torch
 import torchaudio
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
+from transformers import BatchFeature
 
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE
 
@@ -26,6 +27,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
+        print(self.processor.__class__.__name__)
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
 
@@ -46,7 +48,10 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _audio_to_features(self, audio):
         audio_array = torch.tensor(audio["array"], dtype=torch.float32)
         audio_sampling_rate = audio["sampling_rate"]
-        target_sampling_rate = self.processor.feature_extractor.sampling_rate
+        if "SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__:
+            target_sampling_rate = 16000
+        else:
+            target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
         # resample if necessary
         if audio_sampling_rate != target_sampling_rate:
@@ -56,20 +61,28 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 new_freq=target_sampling_rate
             )
 
-        if "Wav2Vec2" in self.processor.__class__.__name__:
+        if ("Wav2Vec2" in self.processor.__class__.__name__):
             # for wav2vec, return raw waveform
             return audio_array
-        else:
-            # for spectrogram-based models (Whisper, CLAP)
-            audio_array = audio_array.numpy()
-            inputs = self.processor(
+        elif ("SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__):
+            return self.processor(
+                audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+            )
+        elif ("Clap" in self.processor.__class__.__name__):
+            return self.processor(
                 audios=audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+            ).input_features[0]
+        elif ("Whisper" in self.processor.__class__.__name__):
+            return self.processor(
                 audio=audio_array,
                 sampling_rate=target_sampling_rate,
                 return_tensors="pt",
                 truncation=True,
-            )
-            return inputs.input_features[0]
+            ).input_features[0]
 
 
     def _format_chat(self, example, audio):
@@ -211,6 +224,26 @@ def collate_fn(batch, tokenizer):
             batch_first=True, 
             padding_value=0.0
         )
+    elif isinstance(audio_features[0], BatchFeature):
+        # for wav2vec2-bert and seamless models
+        # Extract and pad the features
+        features_list = [af.input_features[0] for af in audio_features]  # Remove batch dimension
+        audio_features = torch.nn.utils.rnn.pad_sequence(
+            features_list,
+            batch_first=True,
+            padding_value=0.0
+        )
+        
+        # Create appropriate attention mask
+        max_len = audio_features.size(1)
+        attention_mask = torch.zeros((len(features_list), max_len), dtype=torch.long)
+        for i, feat in enumerate(features_list):
+            attention_mask[i, :feat.size(0)] = 1
+            
+        audio_features = {
+            'input_features': audio_features,
+            'attention_mask': attention_mask
+        }
     else:
         # for spectrogram-based models (Whisper, CLAP)
         audio_features = torch.stack(audio_features)
