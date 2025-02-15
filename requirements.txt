@@ -15,3 +15,5 @@ hydra-core
 wandb
 jiwer
 torchaudio
+ipython
+jupyter

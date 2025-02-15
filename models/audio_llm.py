@@ -7,6 +7,7 @@ from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any, Union
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
+from transformers import AutoModelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch.nn import functional as F
 from types import SimpleNamespace

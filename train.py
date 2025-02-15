@@ -51,7 +51,9 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         dataset, 
         batch_size=cfg.training.batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer), 
-        shuffle=True, 
+        shuffle=True,
+        num_workers=8,
+        prefetch_factor=2,
         pin_memory=True
     )
     
@@ -142,8 +144,8 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
             # Run evaluation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
-                with torch.inference_mode():
-                    run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
+                run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
+
             
             # reset batch timer
             batch_start_time = time.monotonic()
@@ -165,6 +167,9 @@ def main(cfg: DictConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
