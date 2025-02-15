@@ -1,9 +1,11 @@
-import os
+import functools
 import logging
+import os
+
 import torch
 from torch.utils.data import DataLoader
+
 from dataset.audio_dataset import collate_fn
-import functools
 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:

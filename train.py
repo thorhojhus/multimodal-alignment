@@ -1,19 +1,24 @@
+import functools
 import logging
 import time
-import wandb
-import functools
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
-import torch
-from torch.utils.data import DataLoader
-from transformers import AutoProcessor, get_linear_schedule_with_warmup, ClapTextModel
-from models.audio_llm import AudioLLMModel
-from dataset.audio_dataset import AudioChatDataset, collate_fn
 import hydra
+import torch
+import wandb
 from omegaconf import DictConfig
-from utils import print_parameter_count, save_checkpoint, load_checkpoint, run_evaluation
+from torch.utils.data import DataLoader
+from transformers import AutoProcessor, get_linear_schedule_with_warmup
+
+from dataset.audio_dataset import AudioChatDataset, collate_fn
+from models.audio_llm import AudioLLMModel
+from utils import (
+    load_checkpoint,
+    print_parameter_count,
+    run_evaluation,
+    save_checkpoint,
+)
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)

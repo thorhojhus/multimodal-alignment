@@ -1,16 +1,16 @@
-import transformers
-from models.whisper_modified import WhisperModel
-from models.linear_projector import Projector
-from models.encoders import EncoderWrapper
-import torch
-from torch import nn, Tensor
-from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Any, Union
-from liger_kernel.transformers import AutoLigerKernelForCausalLM
-from transformers import AutoModelForCausalLM
-from liger_kernel.transformers.functional import liger_kl_div
-from torch.nn import functional as F
 from types import SimpleNamespace
+from typing import Any, List, Optional, Tuple
+
+import torch
+import transformers
+from liger_kernel.transformers import AutoLigerKernelForCausalLM
+from liger_kernel.transformers.functional import liger_kl_div
+from torch import Tensor, nn
+from torch.nn import functional as F
+
+from models.encoders import EncoderWrapper
+from models.linear_projector import Projector
+
 
 class AudioLLMModel(nn.Module):
     def __init__(self, config):
