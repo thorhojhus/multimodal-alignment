@@ -43,6 +43,7 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.WAV2VEC:
                 encoder = Wav2Vec2Model.from_pretrained(
                     self.encoder_type.value,
+                    attn_implementation="flash_attention_2",
                     torch_dtype=torch.bfloat16,
                     device_map=None
                 ).to("cuda")
