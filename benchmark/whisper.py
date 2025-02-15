@@ -16,7 +16,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.enabled = True
 
 # Use OpenAI's Whisper model
-model_name = "openai/whisper-large-v3-turbo"
+model_name = "openai/whisper-large-v3"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
 
 class CoralTestDataset(Dataset):
@@ -60,8 +60,8 @@ test_dataset = CoralTestDataset(test_data)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=256,
-    num_workers=16,
+    batch_size=128,
+    num_workers=8,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn,
