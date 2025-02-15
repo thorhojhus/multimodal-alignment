@@ -1,15 +1,15 @@
-from datetime import datetime
 import logging
-import torch.utils.data.dataloader
-from torch.utils.data import DataLoader
-import torch
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
+from datetime import datetime
+
 import hydra
-from omegaconf import DictConfig
-import torch
 import jiwer
+import torch
+import torch.utils.data.dataloader
 import wandb
+from omegaconf import DictConfig
+from torch.utils.data import DataLoader
 from torchaudio.transforms import Resample
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)

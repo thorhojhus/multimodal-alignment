@@ -1,8 +1,10 @@
 import torch
+import torchaudio
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
-from dataset.chat_templates import CHATML_TEMPLATE, LLAMA3_TEMPLATE, GEMMA_2
-import torchaudio
+
+from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE
+
 
 class AudioChatDataset(torch.utils.data.Dataset):
     def __init__(self, 
@@ -61,7 +63,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _format_chat(self, example, audio):
         if self.lm_model_name != "gemma":
             return [
-                {"role": "system", "content": f"You transcribe speech to text. You need to repeat the text once exactly as it is spoken."},
+                {"role": "system", "content": "You transcribe speech to text. You need to repeat the text once exactly as it is spoken."},
                 {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
                 {"role": "assistant", "content": example}
             ]

@@ -1,7 +1,6 @@
 from typing import Tuple
 import torch
 from torch import nn, Tensor
-from torch.nn import functional as F
 from liger_kernel.transformers import LigerRMSNorm as RMSNorm
 
 class Projector(nn.Module):
