@@ -2,14 +2,16 @@ import torch
 from transformers import AutoModel
 from transformers import WhisperModel
 from transformers import ClapModel
+from transformers import Wav2Vec2Model
 from enum import Enum
 
 
 class EncoderEnum(Enum):
     WHISPER = "openai/whisper-base"
     WHISPER_TURBO = "openai/whisper-large-v3-turbo"
-    HVISKE="syvai/hviske-v2"
+    HVISKE = "syvai/hviske-v2"
     CLAP = "laion/clap-htsat-unfused"
+    WAV2VEC = "facebook/wav2vec2-base-960h"
 
 
 class EncoderWrapper(AutoModel):
@@ -38,6 +40,12 @@ class EncoderWrapper(AutoModel):
                     device_map=None
                 )
                 encoder = model.audio_model.audio_encoder.to("cuda")
+            case EncoderEnum.WAV2VEC:
+                encoder = Wav2Vec2Model.from_pretrained(
+                    self.encoder_type.value,
+                    torch_dtype=torch.bfloat16,
+                    device_map=None
+                ).to("cuda")
 
         # freeze encoder params
         for param in encoder.parameters():
@@ -50,9 +58,10 @@ class EncoderWrapper(AutoModel):
         match self.encoder_type:
             case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
                 return self.audio_encoder.config.d_model
-            
             case EncoderEnum.CLAP: 
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
+            case EncoderEnum.WAV2VEC:
+                return self.audio_encoder.config.hidden_size
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
@@ -62,6 +71,8 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
                 return audio_encoded.permute(0, 2, 3, 1).reshape(B, -1, D)
+            case EncoderEnum.WAV2VEC:
+                return audio_encoded
 
     def __call__(self, *args, **kwargs):
         return self.audio_encoder(*args, **kwargs)
