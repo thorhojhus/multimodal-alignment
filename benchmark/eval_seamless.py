@@ -1,7 +1,6 @@
 import transformers
 import torch
 from jiwer import wer
-from tqdm import tqdm  # Progress bar
 from dataset.load_coral import coral_dataset_dict
 
 # Load the model and processor

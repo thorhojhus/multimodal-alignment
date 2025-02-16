@@ -148,19 +148,23 @@ def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # find positions of audio tokens in each sequence
     return [(row == audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
-
-def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
-    # adjust indices for audio token insertion
-    return [
-        pos - torch.arange(len(pos), device=pos.device) if pos.numel() > 0
-        else torch.tensor([], dtype=torch.long, device=pos.device)
-        for pos in audio_positions
-    ]
-
 def get_valid_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # get positions of non-audio tokens
     return [(row != audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
+def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
+    adjusted_indices = []
+    
+    for positions in audio_positions:
+        if positions.numel() > 0:
+            # create a sequence of numbers from 0 to len(positions)-1
+            shift_values = torch.arange(len(positions), device=positions.device)
+            adjusted_indices.append(positions - shift_values)
+        else:
+            # return an empty tensor if no audio tokens are found
+            adjusted_indices.append(torch.tensor([], dtype=torch.long, device=positions.device))
+
+    return adjusted_indices
 
 def prepare_inputs(
     input_ids: Tensor, labels: Tensor | None, tokenizer
