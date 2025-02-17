@@ -38,11 +38,13 @@ The fourth item was is inspired by Vaswani et al. in the original transformer pa
 
 There are several ways to compute the positional encoding, but a common one seen previously is the sine-cosine positional encoding, which is usually calculated as follows:
 
-\begin{align*}
-    PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
-    PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
+\begin{align}
+    \begin{split}
+        PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
+        PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
+    \end{split}
     \label{eq:pos_enc_sin}
-\end{align*}
+\end{align}
 
 In equation \ref{eq:pos_enc_sin}, $pos$ is the position of the token in the sentence, $i$ is the dimension of the positional encoding, $d_{model}$ is the dimension of the model, and $n$ is usually a constant, such as $10000$ initially proposed in the transformers paper\cite{vaswani_attention_2017}.
 
@@ -57,12 +59,10 @@ While the sinusoidal positional encoding is extremely enticing due to its simpli
 RoPe formulates another approach, where they realize that in the self attention calculation, the dot product between query and key vector, $q_m^Tk_n$, and if that computation should not only enable knowledge conveyance (ANDET ORD?) but also relative positional encoding, then a equaivalent function has to be found such that:
 
 \begin{equation}
-    $$
     <f_q(x_m, m), f_k(x_n, n)> = g(x_m, x_n, m-n)
-    $$
 \end{equation}
 
-Where $m - n$ is the relative positions of input. The proposed solution is a little indepth, but the intuition is to intorduce a rotational matrix for the query and key vectors. A illustrative example is shown in figure \ref{fig:rope} from the paper.
+Where $ m - n $ is the relative positions of input. The proposed solution is a little indepth, but the intuition is to intorduce a rotational matrix for the query and key vectors. A illustrative example is shown in figure \ref{fig:rope} from the paper.
 
 \begin{figure}
     \centering
