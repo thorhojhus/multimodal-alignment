@@ -32,4 +32,6 @@ cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 #python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=32 dataset.name=coral model.load_in_4bit=true wandb.enabled=true training.resume_from_checkpoint=true training.resume_checkpoint_path=/work3/s224233/shared/multimodal-alignment/outputs/2025-02-14/13-36-39/checkpoints/checkpoint_latest.pt
 
-python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-base training.batch_size=64 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
+#python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-base training.batch_size=64 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
+
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=openai/whisper-large-v3 training.batch_size=32 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
