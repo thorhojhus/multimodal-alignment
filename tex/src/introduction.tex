@@ -25,9 +25,7 @@ BERT proved to be an incredibly capable model outperforming in many different ta
 
 \textbf{Positional Encoding}
 
-Employed in most models is a positional encoding operation, which adds positional information to the encodints that the models expects. This encoding is calculated to be the same size as the data, and is usally either added or multiplied with the feature encodings.
-
-Now, desireable features for positional encodings are the following:
+Employed in most models is a positional encoding operation, which adds positional information to the different input parts. Desireable features for positional encodings are the following:
 
 \begin{itemize}
     \item The positional encoding should be unique for the positions.
@@ -69,7 +67,7 @@ Where $m - n$ is the relative positions of input. The proposed solution is a lit
 \begin{figure}
     \centering
     \includegraphics[width=0.75\textwidth]{figures/RoPE.png}
-    \caption{Rotary Position Embeddings; perform a rotation in plane with a constant $\theta$ scaling with the dimension. PLACEHOLDER}
+    \caption{Rotary Position Embeddings; perform a rotation in plane with a constant $\theta$ scaling with the dimension.}
     \label{fig:rope}
 \end{figure}
 
