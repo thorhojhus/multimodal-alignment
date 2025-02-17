@@ -7,6 +7,7 @@ from enum import Enum
 
 class EncoderEnum(Enum):
     WHISPER = "openai/whisper-base"
+    WHISPER_LARGE = "openai/whisper-large-v3"
     WHISPER_TURBO = "openai/whisper-large-v3-turbo"
     HVISKE="syvai/hviske-v2"
     CLAP = "laion/clap-htsat-unfused"
@@ -22,7 +23,7 @@ class EncoderWrapper(AutoModel):
         """Initialize/load the encoder."""
 
         match self.encoder_type:
-            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE | EncoderEnum.WHISPER_LARGE:
                 whisper = WhisperModel.from_pretrained(
                     self.encoder_type.value,
                     attn_implementation="flash_attention_2",
@@ -38,17 +39,17 @@ class EncoderWrapper(AutoModel):
                     device_map=None
                 )
                 encoder = model.audio_model.audio_encoder.to("cuda")
-
         # freeze encoder params
         for param in encoder.parameters():
             param.requires_grad = False
+
         
         return encoder
 
     def get_proj_dim(self):
         """Return the projection dimension we expect the Audio Projection Layer to receive."""
         match self.encoder_type:
-            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE | EncoderEnum.WHISPER_LARGE:
                 return self.audio_encoder.config.d_model
             
             case EncoderEnum.CLAP: 
@@ -57,7 +58,7 @@ class EncoderWrapper(AutoModel):
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
         match self.encoder_type:
-            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE:
+            case EncoderEnum.WHISPER | EncoderEnum.WHISPER_TURBO | EncoderEnum.HVISKE | EncoderEnum.WHISPER_LARGE:
                 return audio_encoded
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
