@@ -124,12 +124,21 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         user_prompt = get_user_prompt(batch["input_ids"][i], model_name)
         ground_truth = get_ground_truth(batch["input_ids"][i], model_name)
         user_prompt_mask = torch.ones_like(user_prompt)
+        
+        if isinstance(batch["audio_features"], dict):
+            audio_features = {
+                'input_features': batch["audio_features"]["input_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
+                'attention_mask': batch["audio_features"]["attention_mask"][i].to("cuda").unsqueeze(0)
+            }
+        else:
+            audio_features = batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0)
 
+        breakpoint()
         # generate completions
         with torch.inference_mode():
             outputs = model.generate(
                 input_ids=user_prompt.unsqueeze(0).to("cuda"),
-                audio_features=batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
+                audio_features=audio_features,
                 insertion_indices=batch["insertion_indices"][i].to("cuda").unsqueeze(0),
                 attention_mask=user_prompt_mask.unsqueeze(0).to("cuda"),
                 max_new_tokens=100,

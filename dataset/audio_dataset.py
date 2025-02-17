@@ -2,6 +2,7 @@ import torch
 import torchaudio
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
+from transformers import BatchFeature
 
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE
 
@@ -26,6 +27,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
+        print(self.processor.__class__.__name__)
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
 
@@ -46,18 +48,41 @@ class AudioChatDataset(torch.utils.data.Dataset):
     def _audio_to_features(self, audio):
         audio_array = torch.tensor(audio["array"], dtype=torch.float32)
         audio_sampling_rate = audio["sampling_rate"]
-        target_sampling_rate = self.processor.feature_extractor.sampling_rate
+        if "SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__:
+            target_sampling_rate = 16000
+        else:
+            target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
-        audio_array = torchaudio.functional.resample(audio_array, orig_freq=audio_sampling_rate, new_freq=target_sampling_rate).numpy()
+        # resample if necessary
+        if audio_sampling_rate != target_sampling_rate:
+            audio_array = torchaudio.functional.resample(
+                audio_array, 
+                orig_freq=audio_sampling_rate, 
+                new_freq=target_sampling_rate
+            )
 
-        inputs = self.processor(
-            audios=audio_array,
-            audio=audio_array,
-            sampling_rate=target_sampling_rate,
-            return_tensors="pt",
-            truncation=True,
-        )
-        return inputs.input_features[0]
+        if ("Wav2Vec2" in self.processor.__class__.__name__):
+            # for wav2vec, return raw waveform
+            return audio_array
+        elif ("SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__):
+            return self.processor(
+                audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+            )
+        elif ("Clap" in self.processor.__class__.__name__):
+            return self.processor(
+                audios=audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+            ).input_features[0]
+        elif ("Whisper" in self.processor.__class__.__name__):
+            return self.processor(
+                audio=audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+                truncation=True,
+            ).input_features[0]
 
 
     def _format_chat(self, example, audio):
@@ -123,19 +148,23 @@ def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # find positions of audio tokens in each sequence
     return [(row == audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
-
-def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
-    # adjust indices for audio token insertion
-    return [
-        pos - torch.arange(len(pos), device=pos.device) if pos.numel() > 0
-        else torch.tensor([], dtype=torch.long, device=pos.device)
-        for pos in audio_positions
-    ]
-
 def get_valid_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # get positions of non-audio tokens
     return [(row != audio_token_id).nonzero(as_tuple=True)[0] for row in input_ids]
 
+def adjust_insertion_indices(audio_positions: list[Tensor]) -> list[Tensor]:
+    adjusted_indices = []
+    
+    for positions in audio_positions:
+        if positions.numel() > 0:
+            # create a sequence of numbers from 0 to len(positions)-1
+            shift_values = torch.arange(len(positions), device=positions.device)
+            adjusted_indices.append(positions - shift_values)
+        else:
+            # return an empty tensor if no audio tokens are found
+            adjusted_indices.append(torch.tensor([], dtype=torch.long, device=positions.device))
+
+    return adjusted_indices
 
 def prepare_inputs(
     input_ids: Tensor, labels: Tensor | None, tokenizer
@@ -185,15 +214,47 @@ def collate_fn(batch, tokenizer):
         
         alt_input_ids.append(torch.nn.functional.pad(item["alt_input_ids"], (0, alt_pad_len), value=pad_token_id))
         alt_labels.append(torch.nn.functional.pad(item["alt_labels"], (0, alt_pad_len), value=-100))
-    
-
 
     input_ids = torch.stack(input_ids)
-    audio_features = torch.stack(audio_features)
     labels = torch.stack(labels)
+    alt_input_ids = torch.stack(alt_input_ids)
+    alt_labels = torch.stack(alt_labels)
 
-    prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(input_ids, labels, tokenizer)
-    
+    # handle audio features based on model type
+    if isinstance(audio_features[0], torch.Tensor):
+        # for wav2vec and other raw waveform models
+        audio_features = torch.nn.utils.rnn.pad_sequence(
+            audio_features, 
+            batch_first=True, 
+            padding_value=0.0
+        )
+    elif isinstance(audio_features[0], BatchFeature):
+        # for wav2vec2-bert and seamless models
+        # Extract and pad the features
+        features_list = [af.input_features[0] for af in audio_features]  # Remove batch dimension
+        audio_features = torch.nn.utils.rnn.pad_sequence(
+            features_list,
+            batch_first=True,
+            padding_value=0.0
+        )
+        
+        # Create appropriate attention mask
+        max_len = audio_features.size(1)
+        attention_mask = torch.zeros((len(features_list), max_len), dtype=torch.long)
+        for i, feat in enumerate(features_list):
+            attention_mask[i, :feat.size(0)] = 1
+            
+        audio_features = {
+            'input_features': audio_features,
+            'attention_mask': attention_mask
+        }
+    else:
+        # for spectrogram-based models (Whisper, CLAP)
+        audio_features = torch.stack(audio_features)
+
+    prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
+        input_ids, labels, tokenizer
+    )
     
     return {
         "input_ids": prepared_input_ids,
@@ -201,8 +262,8 @@ def collate_fn(batch, tokenizer):
         "labels": prepared_labels,
         "attention_mask": prepared_attention_mask,
         "insertion_indices": prepared_insertion_indices,
-        "alt_input_ids": torch.stack(alt_input_ids),
-        "alt_labels": torch.stack(alt_labels)
+        "alt_input_ids": alt_input_ids,
+        "alt_labels": alt_labels
     }
 
 if __name__ == "__main__":

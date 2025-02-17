@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union, Dict
 
 import torch
 import transformers
@@ -68,13 +68,16 @@ class AudioLLMModel(nn.Module):
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
 
-    def _process_audio_features(self, audio_features: Tensor) -> Tensor:
+    def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            if isinstance(audio_features, dict):
+                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            else:
+                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
-
+    
     def _combine_embeddings(
         self, text_embeds: Tensor, audio_embeds: Tensor, 
         insertion_indices: List[Tensor], labels: Optional[Tensor] = None,

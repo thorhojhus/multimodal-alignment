@@ -31,17 +31,32 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictConfig) -> None:
+def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # create dataset and processor
+    if "w2v-bert" in cfg.model.encoder_model_name:
+        from transformers import AutoFeatureExtractor
+        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+    else:
+        processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+    
+    dataset = AudioChatDataset(
+        lm_model=cfg.model.lm_model_name,
+        dataset=cfg.dataset.name,
+        split=cfg.dataset.split,
+        tokenizer=model.tokenizer,
+        processor=processor
+    )
     
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
         split="test.clean",
         tokenizer=model.tokenizer,
-        processor=AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+        processor=processor,
     )
     
     print_parameter_count(model, logger)
@@ -90,7 +105,15 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
-            audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+            if isinstance(batch["audio_features"], dict):
+                # for wav2vec-bert/seamless models
+                audio_features = {
+                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                }
+            else:
+                # for other models (Whisper, CLAP, wav2vec)
+                audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
@@ -127,7 +150,7 @@ def train(model: torch.nn.Module, dataset: torch.utils.data.Dataset, cfg: DictCo
                 current_lr = scheduler.get_last_lr()[0]
                 memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
                 memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
-                torch.cuda.empty_cache()
+                #torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
@@ -174,24 +197,13 @@ def main(cfg: DictConfig):
     torch.backends.cudnn.allow_tf32 = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = True
-    torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
+    torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
     # log the Hydra configuration for reproducibility
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
 
     model = AudioLLMModel(cfg)
 
-    
-    # create dataset and processor
-    processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
-    dataset = AudioChatDataset(
-        lm_model=cfg.model.lm_model_name,
-        dataset=cfg.dataset.name,
-        split=cfg.dataset.split,
-        tokenizer=model.tokenizer,
-        processor=processor
-    )
-    
     # freeze non-trainable components
     for param in model.lm.parameters():
         param.requires_grad = False
@@ -199,7 +211,7 @@ def main(cfg: DictConfig):
     if cfg.wandb.enabled:
         setup_wandb(cfg)
     
-    train(model, dataset, cfg)
+    train(model, cfg)
 
 if __name__ == "__main__":
     main()
