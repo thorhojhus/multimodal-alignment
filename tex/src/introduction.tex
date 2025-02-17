@@ -1,1 +1,83 @@
-This is an introduction, yes! Now with BiBtEx with citations!\cite{liu_ola_2025}
+\textbf{BERT}  
+With the transformer architecture proposed, a lot of transformer related models saw emergence the years thereafter. Such model was the Bidirectional Encoder Representations from Transformers (BERT) utilizing only the encoders from the transformer architecutre, and OpenAIs GPT utilizing only the decoder structure. This model was yet another huge jump forward in the field of NLP in machine learning\cite{devlin_bert_2019}.
+
+A noteable problem with purely transformer encoder-based models, which BERT is, was that training on word prediction and similar could be problematic. Since the encoder structure employ the self-attention mechanism, it allows it to see the target token. This is the reason that OpenAIs GPT model opted for a decoder structure, a purely left-to-right model structure, as it allowed them to perform next work prediction without the model being able to see the word it was to predict due to the masked self attention.
+
+The training process for BERT allows it to use an encoder based implementation where each work during training has a chance to be either: masked, replaced or retainted as-is; they denote this as "Masked Language Model" pre-training objective. The training process is then for the model to predict the "masked" word. This novelization of the training process allows the model to be bidirectional and use the encoders from the transformer architecture, and thus have a better understanding of the context of the words in a sentence - both left \textit{and} right - which they claim is crucial for models to do tasks such as question answering. The representations that BERT learn could also be used for downstream tasks such as classification, questioning and answering, sentiment analysis et cetera.
+
+The Masked Language Model training objective is utilized in other models as well as other domains including audio; as an example, W2V-BERT utilizes it\cite{chung_w2v-bert_2021}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/MLM.png}
+    \caption{Masked Language Model Pretraining PLACEHOLDER}
+    \label{fig:mlm}
+\end{figure}
+
+BERT proved to be an incredibly capable model outperforming in many different tasks proving it to be a very versatile model. The model was also the first to be able to outperform humans in the Stanford Question Answering Dataset (SQuAD) benchmark\cite{rajpurkar2016squad100000questionsmachine}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/BERT.png}
+    \caption{BERT model architecture here PLACEDHOLDER}
+    \label{fig:bert}
+\end{figure}
+
+\textbf{Positional Encoding}
+
+Employed in most models is a positional encoding operation, which adds positional information to the encodints that the models expects. This encoding is calculated to be the same size as the data, and is usally either added or multiplied with the feature encodings.
+
+Now, desireable features for positional encodings are the following:
+
+\begin{itemize}
+    \item The positional encoding should be unique for the positions.
+    \item The positional encoding should be differentiable to be of use during training.
+    \item The positional encoding should be able to extend to different input lengths outside those seen during training.
+    \item The positional encoding should linearly be able to interpolate to the other encodings.
+\end{itemize}
+
+The fourth item was is inspired by Vaswani et al. in the original transformer paper where they hypothesize that models can then learn relative positions easily from such properties\cite{vaswani_attention_2017}.
+
+There are several ways to compute the positional encoding, but a common one seen previously is the sine-cosine positional encoding, which is usually calculated as follows:
+
+\begin{align*}
+    PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
+    PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
+    \label{eq:pos_enc_sin}
+\end{align*}
+
+In equation \ref{eq:pos_enc_sin}, $pos$ is the position of the token in the sentence, $i$ is the dimension of the positional encoding, $d_{model}$ is the dimension of the model, and $n$ is usually a constant, such as $10000$ initially proposed in the transformers paper\cite{vaswani_attention_2017}.
+
+One can think of it as a kind of "binary encoding" but with sine and cosine functions. 
+
+Positional encodings allow the model to learn the absolute and relative position of the different words and tokens. In figure \ref{fig:penc} you can see how the encoding would look for a sample sentence.
+
+\textbf{RoPe: Rotary Position Embeddings}
+
+While the sinusoidal positional encoding is extremely enticing due to its simplicity and properties, another encoding was introduced by Su et al called RoPE (Rotary Position Embeddings)\cite{su_roformer_2023}.
+
+RoPe formulates another approach, where they realize that in the self attention calculation, the dot product between query and key vector, $q_m^Tk_n$, and if that computation should not only enable knowledge conveyance (ANDET ORD?) but also relative positional encoding, then a equaivalent function has to be found such that:
+
+\begin{equation}
+    $$
+    <f_q(x_m, m), f_k(x_n, n)> = g(x_m, x_n, m-n)
+    $$
+\end{equation}
+
+Where $m - n$ is the relative positions of input. The proposed solution is a little indepth, but the intuition is to intorduce a rotational matrix for the query and key vectors. A illustrative example is shown in figure \ref{fig:rope} from the paper.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/RoPE.png}
+    \caption{Rotary Position Embeddings; perform a rotation in plane with a constant $\theta$ scaling with the dimension. PLACEHOLDER}
+    \label{fig:rope}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/PosEnc.png}
+    \caption{Positional encoding PLACEHOLDER}
+    \label{fig:penc}
+\end{figure}
+
+
