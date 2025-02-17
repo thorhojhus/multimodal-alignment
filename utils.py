@@ -133,7 +133,6 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         else:
             audio_features = batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0)
 
-        breakpoint()
         # generate completions
         with torch.inference_mode():
             outputs = model.generate(
