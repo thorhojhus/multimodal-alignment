@@ -181,7 +181,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             #     loss_window = []
             #     break  # restart epoch with new dataloader
             
-            #total_loss += loss_value
+            total_loss += loss_value
             global_step += 1
             
             batch_time = time.monotonic() - batch_start_time
