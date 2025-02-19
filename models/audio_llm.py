@@ -10,6 +10,7 @@ from torch.nn import functional as F
 
 from models.encoders import EncoderWrapper
 from models.linear_projector import Projector
+#from models.projector import Projector
 
 
 class AudioLLMModel(nn.Module):
@@ -67,25 +68,29 @@ class AudioLLMModel(nn.Module):
         # add audio token if not in vocabulary
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
-
-    def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
-        # encode and project audio features
-        with torch.no_grad():
-            if isinstance(audio_features, dict):
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            else:
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
-        return self.projector(audio_encoded)
+    
+    def _process_audio_features(self, audio_features: Union[List[Tensor], List[Dict[str, Tensor]]]) -> List[Tensor]:
+        #pProcess each set of audio features separately
+        processed_features = []
+        for features in audio_features:
+            # audio encoder is frozen, so we can use no_grad here
+            with torch.no_grad():
+                if isinstance(features, dict):
+                    audio_encoded = self.audio_encoder(features).last_hidden_state
+                else:
+                    audio_encoded = self.audio_encoder(features).last_hidden_state
+                audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+            # projector needs gradients, so this should be outside no_grad
+            processed_features.append(self.projector(audio_encoded))
+        return processed_features
     
     def _combine_embeddings(
-        self, text_embeds: Tensor, audio_embeds: Tensor, 
+        self, text_embeds: Tensor, audio_embeds: List[Tensor], 
         insertion_indices: List[Tensor], labels: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
-        # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
-        B, D, _ = audio_embeds.shape
+        B = text_embeds.size(0)
 
         for i in range(B):
             embeds = text_embeds[i]
@@ -93,28 +98,45 @@ class AudioLLMModel(nn.Module):
             att_mask = attention_mask[i] if attention_mask is not None else None
 
             if insertion_indices[i].numel() > 0:
-                idx = insertion_indices[i][0].item()
-                # insert audio embeddings at specified position
-                combined_embeds = torch.cat([embeds[:idx], audio_embeds[i], embeds[idx:]], dim=0)
-                if lbls is not None:
-                    # mark audio positions with -100 in labels
-                    audio_labels = torch.full((D,), -100, dtype=lbls.dtype, device=lbls.device)
-                    combined_labels = torch.cat([lbls[:idx], audio_labels, lbls[idx:]], dim=0)
-                    combined_labels_list.append(combined_labels)
-
-                if att_mask is not None:
-                    # set attention mask for audio embeddings
-                    audio_mask = torch.ones(D, dtype=att_mask.dtype, device=att_mask.device)
-                    combined_att_mask = torch.cat([att_mask[:idx], audio_mask, att_mask[idx:]], dim=0)
-                    combined_attention_mask_list.append(combined_att_mask)
+                # process each audio embedding position
+                current_embeds = embeds
+                current_lbls = lbls
+                current_att_mask = att_mask
+                
+                # track offset for subsequent insertions
+                offset = 0
+                
+                for j, idx in enumerate(insertion_indices[i]):
+                    idx = idx.item() + offset  # adjust index based on previous insertions
+                    audio_embed = audio_embeds[j][i]  # get the i-th sample from j-th audio batch
+                    D = audio_embed.size(0)
+                    
+                    # insert audio embeddings
+                    current_embeds = torch.cat([current_embeds[:idx], audio_embed, current_embeds[idx:]], dim=0)
+                    
+                    if current_lbls is not None:
+                        # mark audio positions with -100 in labels
+                        audio_labels = torch.full((D,), -100, dtype=current_lbls.dtype, device=current_lbls.device)
+                        current_lbls = torch.cat([current_lbls[:idx], audio_labels, current_lbls[idx:]], dim=0)
+                    
+                    if current_att_mask is not None:
+                        # set attention mask for audio embeddings
+                        audio_mask = torch.ones(D, dtype=current_att_mask.dtype, device=current_att_mask.device)
+                        current_att_mask = torch.cat([current_att_mask[:idx], audio_mask, current_att_mask[idx:]], dim=0)
+                    
+                    offset += D  # update offset for next insertion
+                    
+                combined_embeds_list.append(current_embeds)
+                if current_lbls is not None:
+                    combined_labels_list.append(current_lbls)
+                if current_att_mask is not None:
+                    combined_attention_mask_list.append(current_att_mask)
             else:
-                combined_embeds = embeds
+                combined_embeds_list.append(embeds)
                 if lbls is not None:
                     combined_labels_list.append(lbls)
                 if att_mask is not None:
                     combined_attention_mask_list.append(att_mask)
-            
-            combined_embeds_list.append(combined_embeds)
 
         return combined_embeds_list, combined_labels_list, combined_attention_mask_list
 
@@ -145,13 +167,13 @@ class AudioLLMModel(nn.Module):
         self.projector.load_state_dict(torch.load(load_path, weights_only=True))
 
     def forward(
-        self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
-        attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
-        alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, **kwargs
+        self, input_ids: Tensor, audio_features: List[Union[Tensor, Dict[str, Tensor]]], 
+        insertion_indices: Tensor, attention_mask: Optional[Tensor] = None, 
+        labels: Optional[Tensor] = None, alt_input_ids: Optional[Tensor] = None, 
+        alt_attention_mask: Optional[Tensor] = None, alt_labels: Optional[Tensor] = None, 
+        **kwargs
     ) -> Any:
-                
-        # process audio and text features
+        # process all audio features
         audio_embeds = self._process_audio_features(audio_features)
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
@@ -167,22 +189,33 @@ class AudioLLMModel(nn.Module):
                 inputs_embeds=combined_embeds,
                 attention_mask=combined_attention_mask,
             )
-            return self._compute_kl_loss(lm_output=lm_output, labels=combined_labels, alt_input_ids=alt_input_ids, alt_labels=alt_labels)
+            return self._compute_kl_loss(
+                lm_output=lm_output, 
+                labels=combined_labels, 
+                alt_input_ids=alt_input_ids, 
+                alt_labels=alt_labels
+            )
         
         # forward pass through language model (cross-entropy loss)
-        return self.lm(
-                inputs_embeds=combined_embeds,
-                attention_mask=combined_attention_mask,
-                labels=combined_labels
-            )
+        outputs = self.lm(
+            inputs_embeds=combined_embeds,
+            attention_mask=combined_attention_mask,
+            labels=combined_labels
+        )
+        
+        # ensure loss has requires_grad=True
+        if outputs.loss is not None:
+            outputs.loss = outputs.loss.requires_grad_(True)
+        
+        return outputs
 
     def generate(
-        self, input_ids: Tensor, audio_features: Tensor,
+        self, input_ids: Tensor, audio_features: List[Union[Tensor, Dict[str, Tensor]]],
         insertion_indices: Tensor, attention_mask: Tensor,
         max_new_tokens: int = 100,
         **generation_kwargs: Any
     ) -> Tensor:
-        # process audio and text features
+        # process all audio features
         audio_embeds = self._process_audio_features(audio_features)
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
@@ -198,6 +231,7 @@ class AudioLLMModel(nn.Module):
             "pad_token_id": self.pad_token_id,
             **generation_kwargs
         }
+        
         # generate text completions
         return self.lm.generate(
             inputs_embeds=combined_embeds,
@@ -213,7 +247,7 @@ class AudioLLMModel(nn.Module):
         alt_attention_mask: Optional[torch.Tensor] = None,
         alt_labels: Optional[torch.Tensor] = None,
         **kwargs,
-    ):
+    ) -> SimpleNamespace:
         with torch.no_grad():
             alt_inputs_embeds = self.lm.get_input_embeddings().forward(alt_input_ids)
             alt_lm_output = self.lm.forward(

@@ -32,11 +32,11 @@ def setup_wandb(runtime_config: DictConfig) -> None:
     )
 
 def train(model: torch.nn.Module, cfg: DictConfig) -> None:
-    # create checkpoint directory
+    # Create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # create dataset and processor
+    # Create dataset and processor
     if "w2v-bert" in cfg.model.encoder_model_name:
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
@@ -48,7 +48,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         dataset=cfg.dataset.name,
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
-        processor=processor
+        processor=processor,
+        num_audios=cfg.dataset.num_audios if hasattr(cfg.dataset, 'num_audios') else 1
     )
     
     test_dataset = AudioChatDataset(
@@ -57,6 +58,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         split="test.clean",
         tokenizer=model.tokenizer,
         processor=processor,
+        num_audios=cfg.dataset.num_audios if hasattr(cfg.dataset, 'num_audios') else 1
     )
     
     print_parameter_count(model, logger)
@@ -77,17 +79,17 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         pin_memory=True
     )
     
-    # calculate total number of training steps
+    # Calculate total number of training steps
     total_steps = len(dataloader) * cfg.training.num_epochs
     
-    # create the scheduler using warmup_steps from config
+    # Create the scheduler
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=cfg.training.warmup_steps,
         num_training_steps=total_steps
     )
 
-    # load checkpoint if specified
+    # Load checkpoint if specified
     global_step = 0
     if cfg.training.resume_from_checkpoint:
         global_step, _ = load_checkpoint(
@@ -103,24 +105,28 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         batch_start_time = time.monotonic()
         
         for batch_idx, batch in enumerate(dataloader):
-            # move data to GPU
+            # Move data to GPU
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
-            if isinstance(batch["audio_features"], dict):
-                # for wav2vec-bert/seamless models
-                audio_features = {
-                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
-                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
-                }
+            
+            # Handle multiple audio features
+            if isinstance(batch["audio_features"][0], dict):
+                # For wav2vec-bert/seamless models
+                audio_features = [{
+                    'input_features': af["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                    'attention_mask': af["attention_mask"].to("cuda", non_blocking=True)
+                } for af in batch["audio_features"]]
             else:
-                # for other models (Whisper, CLAP, wav2vec)
-                audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+                # For other models (Whisper, CLAP, wav2vec)
+                audio_features = [af.to("cuda", torch.bfloat16, non_blocking=True) 
+                                for af in batch["audio_features"]]
+            
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             
-            # forward pass
+            # Forward pass
             outputs = model(
                 input_ids=input_ids,
                 audio_features=audio_features,
@@ -130,12 +136,12 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices
             )
-
-            # backward pass
+            
+            # Backward pass
             loss = outputs.loss
             loss.backward()
             
-            # optimizer and scheduler steps
+            # Optimizer and scheduler steps
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -143,14 +149,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             total_loss += loss.item()
             global_step += 1
             
-            # calculate batch time
+            # Calculate batch time
             batch_time = time.monotonic() - batch_start_time
             
             if global_step % cfg.training.log_every_n_steps == 0:
                 current_lr = scheduler.get_last_lr()[0]
                 memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
                 memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
-                #torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
                     f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
@@ -173,14 +178,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
                 run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
-
             
-            # reset batch timer
+            # Reset batch timer
             batch_start_time = time.monotonic()
         
-        # calculate epoch statistics
+        # Calculate epoch statistics
         avg_loss = total_loss / len(dataloader)
-        epoch_time = time.time() - epoch_start_time
+        epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
         logger.info(

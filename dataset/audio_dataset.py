@@ -12,8 +12,11 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  lm_model: str="HuggingFaceTB/SmolLM2-360M-Instruct",
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
-                 processor=None):
+                 processor=None,
+                 num_audios: int = 1):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
+        self.num_audios = num_audios
+        
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -22,15 +25,15 @@ class AudioChatDataset(torch.utils.data.Dataset):
             self.dataset = librispeech_dataset_dict[str(split)]
         else:
             print("Unsupported dataset")
+            
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
         self.tokenizer = tokenizer
         self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
-        print(self.processor.__class__.__name__)
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
-
+        
     def __len__(self):
         return len(self.dataset)
     
@@ -84,7 +87,24 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 truncation=True,
             ).input_features[0]
 
-
+    def _format_chat_multi(self, examples, audios):
+        """Format multiple audio-transcription pairs as a chat"""
+        messages = []
+        if self.lm_model_name != "gemma":
+            messages.append({
+                "role": "system", 
+                "content": "You transcribe speech to text. You need to repeat the text once exactly as it is spoken."
+            })
+            
+        # add user-assistant pairs for each audio segment
+        for audio, example in zip(audios, examples):
+            messages.extend([
+                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
+                {"role": "assistant", "content": example}
+            ])
+            
+        return messages
+    
     def _format_chat(self, example, audio):
         if self.lm_model_name != "gemma":
             return [
@@ -98,17 +118,28 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 {"role": "assistant", "content": example}
             ]
         
-    def __getitem__(self, idx):
-        example = self.dataset[idx]
-        audio = example["audio"]
-        text = example["text"].lower()
-        audio_features = self._audio_to_features(audio)
 
-        # format as chat
-        conversation = self._format_chat(text, self.audio_token)
-        conversation_alt = self._format_chat(text, text)
+    def __getitem__(self, idx):
+        audio_features = []
+        texts = []
         
-        # tokenize conversation with special handling for audio token
+        for i in range(self.num_audios):
+            current_idx = (idx + i) % len(self.dataset)  # wrap around if needed
+            example = self.dataset[current_idx]
+            
+            # process audio and text
+            audio = example["audio"]
+            text = example["text"].lower()
+            features = self._audio_to_features(audio)
+            
+            audio_features.append(features)
+            texts.append(text)
+        
+        # format conversations
+        conversation = self._format_chat_multi(texts, [self.audio_token] * self.num_audios)
+        conversation_alt = self._format_chat_multi(texts, texts)
+        
+        # tokenize conversations
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
             add_generation_prompt=False,
@@ -121,19 +152,47 @@ class AudioChatDataset(torch.utils.data.Dataset):
             return_tensors="pt"
         )[0]
 
-        # Tokenize only the part of the conversation that is part of the assistant.
-        assistant_response = self.tokenizer.apply_chat_template(
-            [conversation[-1]],
-            add_generation_prompt=False,
-            return_tensors="pt"
-        )[0]
-        
-        # Label such that only assistance part is considering doing the model pass
+        # create labels masking non-assistant content
         labels = torch.full(tokenized.size(), fill_value=-100)
-        labels[-len(assistant_response):] = assistant_response
-
         alt_labels = torch.full(tokenized_alt.size(), fill_value=-100)
-        alt_labels[-len(assistant_response):] = assistant_response
+        
+        # get positions for each assistant response
+        for i in range(self.num_audios):
+            assistant_response = self.tokenizer.apply_chat_template(
+                [conversation[2*i + (2 if self.lm_model_name != "gemma" else 1)]],  # account for system message or lack of it
+                add_generation_prompt=False,
+                return_tensors="pt"
+            )[0]
+            
+            # find position of this assistant response in the full sequence
+            full_sequence = tokenized.tolist()
+            alt_full_sequence = tokenized_alt.tolist()
+            response_sequence = assistant_response.tolist()
+            
+            # find and assign labels in the main sequence
+            found_main = False
+            for pos in range(len(full_sequence) - len(response_sequence) + 1):
+                if full_sequence[pos:pos + len(response_sequence)] == response_sequence:
+                    # verify sequence lengths match before assignment
+                    if pos + len(assistant_response) <= len(labels):
+                        labels[pos:pos + len(assistant_response)] = assistant_response
+                        found_main = True
+                        break
+                    
+            if not found_main:
+                # if we can't find the sequence, log details for debugging
+                print(f"Warning: Could not find assistant response in main sequence for audio {i}")
+                print(f"Response length: {len(response_sequence)}")
+                print(f"Full sequence length: {len(full_sequence)}")
+                print(f"Assistant response: {self.tokenizer.decode(assistant_response)}")
+                print(f"Full sequence: {self.tokenizer.decode(tokenized)}")
+                    
+            # find and assign labels in the alternative sequence
+            for pos in range(len(alt_full_sequence) - len(response_sequence) + 1):
+                if alt_full_sequence[pos:pos + len(response_sequence)] == response_sequence:
+                    # create a new tensor of exactly the right size
+                    alt_labels[pos:pos + len(assistant_response)] = assistant_response
+                    break
         
         return {
             "input_ids": tokenized,
@@ -142,7 +201,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
         }
-
 
 def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
     # find positions of audio tokens in each sequence
@@ -199,9 +257,14 @@ def collate_fn(batch, tokenizer):
     pad_token_id = 0
     input_ids = []
     labels = []
-    audio_features = []
+    audio_features_batches = []
     alt_input_ids = []
     alt_labels = []
+    
+    # initialize audio_features_batches based on the number of audio segments
+    num_audio_segments = len(batch[0]["audio_features"])
+    for _ in range(num_audio_segments):
+        audio_features_batches.append([])
     
     for item in batch:
         # pad input_ids and labels
@@ -210,55 +273,61 @@ def collate_fn(batch, tokenizer):
         
         input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=pad_token_id))
         labels.append(torch.nn.functional.pad(item["labels"], (0, pad_len), value=-100))
-        audio_features.append(item["audio_features"])
-        
         alt_input_ids.append(torch.nn.functional.pad(item["alt_input_ids"], (0, alt_pad_len), value=pad_token_id))
         alt_labels.append(torch.nn.functional.pad(item["alt_labels"], (0, alt_pad_len), value=-100))
+        
+        # handle multiple audio features
+        for i, features in enumerate(item["audio_features"]):
+            audio_features_batches[i].append(features)
 
     input_ids = torch.stack(input_ids)
     labels = torch.stack(labels)
     alt_input_ids = torch.stack(alt_input_ids)
     alt_labels = torch.stack(alt_labels)
 
-    # handle audio features based on model type
-    if isinstance(audio_features[0], torch.Tensor):
-        # for wav2vec and other raw waveform models
-        audio_features = torch.nn.utils.rnn.pad_sequence(
-            audio_features, 
-            batch_first=True, 
-            padding_value=0.0
-        )
-    elif isinstance(audio_features[0], BatchFeature):
-        # for wav2vec2-bert and seamless models
-        # Extract and pad the features
-        features_list = [af.input_features[0] for af in audio_features]  # Remove batch dimension
-        audio_features = torch.nn.utils.rnn.pad_sequence(
-            features_list,
-            batch_first=True,
-            padding_value=0.0
-        )
-        
-        # Create appropriate attention mask
-        max_len = audio_features.size(1)
-        attention_mask = torch.zeros((len(features_list), max_len), dtype=torch.long)
-        for i, feat in enumerate(features_list):
-            attention_mask[i, :feat.size(0)] = 1
+    # process each batch of audio features
+    processed_audio_features = []
+    for audio_batch in audio_features_batches:
+        if isinstance(audio_batch[0], torch.Tensor):
+            # for wav2vec and other raw waveform models
+            features = torch.nn.utils.rnn.pad_sequence(
+                audio_batch, 
+                batch_first=True, 
+                padding_value=0.0
+            )
+            processed_audio_features.append(features)
             
-        audio_features = {
-            'input_features': audio_features,
-            'attention_mask': attention_mask
-        }
-    else:
-        # for spectrogram-based models (Whisper, CLAP)
-        audio_features = torch.stack(audio_features)
+        elif isinstance(audio_batch[0], BatchFeature):
+            # for wav2vec2-bert and seamless models
+            features_list = [af.input_features[0] for af in audio_batch]
+            features = torch.nn.utils.rnn.pad_sequence(
+                features_list,
+                batch_first=True,
+                padding_value=0.0
+            )
+            
+            max_len = features.size(1)
+            attention_mask = torch.zeros((len(features_list), max_len), dtype=torch.long)
+            for i, feat in enumerate(features_list):
+                attention_mask[i, :feat.size(0)] = 1
+                
+            processed_audio_features.append({
+                'input_features': features,
+                'attention_mask': attention_mask
+            })
+        else:
+            # for spectrogram-based models (Whisper, CLAP)
+            features = torch.stack(audio_batch)
+            processed_audio_features.append(features)
 
+    # prepare input sequences (removing audio tokens and getting insertion indices)
     prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
         input_ids, labels, tokenizer
     )
     
     return {
         "input_ids": prepared_input_ids,
-        "audio_features": audio_features,
+        "audio_features": processed_audio_features,
         "labels": prepared_labels,
         "attention_mask": prepared_attention_mask,
         "insertion_indices": prepared_insertion_indices,

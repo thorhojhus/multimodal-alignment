@@ -32,3 +32,4 @@ dataset:
   name: "librispeech"
   split: "train.clean.360"
   test_split: "test.clean"
+  num_audios: 1

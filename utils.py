@@ -88,7 +88,7 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
     def get_user_prompt(ids, model_name):
         token_id = tokenizer.bos_token_id 
         if model_name == "gemma":
-            token_id = 106 # <|start_of_turn|>
+            token_id = 106  # <|start_of_turn|>
         # find positions of BOS tokens
         bos_positions = (ids == token_id).nonzero(as_tuple=True)[0]
         # get the last BOS token position (start of assistant's response)
@@ -101,8 +101,8 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         begin_of_turn = tokenizer.bos_token_id
         end_of_turn = tokenizer.eos_token_id 
         if model_name == "gemma":
-            begin_of_turn = 106 # <|start_of_turn|>
-            end_of_turn = 107 # <|end_of_turn|>
+            begin_of_turn = 106  # <|start_of_turn|>
+            end_of_turn = 107  # <|end_of_turn|>
 
         # find positions of BOS and EOS tokens
         bos_positions = (ids == begin_of_turn).nonzero(as_tuple=True)[0]
@@ -125,13 +125,17 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
         ground_truth = get_ground_truth(batch["input_ids"][i], model_name)
         user_prompt_mask = torch.ones_like(user_prompt)
         
-        if isinstance(batch["audio_features"], dict):
-            audio_features = {
-                'input_features': batch["audio_features"]["input_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
-                'attention_mask': batch["audio_features"]["attention_mask"][i].to("cuda").unsqueeze(0)
-            }
+        # Process audio features based on type
+        if isinstance(batch["audio_features"][0], dict):
+            # For wav2vec-bert/seamless models
+            audio_features = [{
+                'input_features': af["input_features"][i].to("cuda", torch.bfloat16).unsqueeze(0),
+                'attention_mask': af["attention_mask"][i].to("cuda").unsqueeze(0)
+            } for af in batch["audio_features"]]
         else:
-            audio_features = batch["audio_features"][i].to("cuda", torch.bfloat16).unsqueeze(0)
+            # For other models (Whisper, CLAP, wav2vec)
+            audio_features = [af[i].to("cuda", torch.bfloat16).unsqueeze(0) 
+                            for af in batch["audio_features"]]
 
         # generate completions
         with torch.inference_mode():
@@ -141,13 +145,12 @@ def run_evaluation(model: torch.nn.Module, test_dataset: torch.utils.data.Datase
                 insertion_indices=batch["insertion_indices"][i].to("cuda").unsqueeze(0),
                 attention_mask=user_prompt_mask.unsqueeze(0).to("cuda"),
                 max_new_tokens=100,
-                do_sample=False,
             )
     
-        generated_text = tokenizer.decode(outputs[0].tolist(), skip_special_tokens=False)
+        generated_text = tokenizer.decode(outputs[0].tolist(), skip_special_tokens=True)
         
         logger.info("\nEvaluation Sample %d:", i + 1)
-        logger.info("User prompt: %s", tokenizer.decode(user_prompt, skip_special_tokens=False))
+        logger.info("User prompt: %s", tokenizer.decode(user_prompt, skip_special_tokens=True))
         logger.info("Ground truth: %s", ground_truth)
         logger.info("Generated: %s", generated_text)
         logger.info("-" * 50)
