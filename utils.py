@@ -63,7 +63,7 @@ def load_checkpoint(
     for model in models:
         model.load_state_dict(checkpoint[model._get_name()])
     optimizer.load_state_dict(checkpoint['optimizer_state'])
-    scheduler.load_state_dict(checkpoint['scheduler_state'])
+    #scheduler.load_state_dict(checkpoint['scheduler_state'])
     
     return checkpoint['global_step'], checkpoint['loss']
 

@@ -12,12 +12,15 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  lm_model: str="HuggingFaceTB/SmolLM2-360M-Instruct",
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
-                 processor=None):
+                 processor=None,
+                 do_qa:bool=True):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
-        if dataset == "coral":
+        self.dataset_name = dataset
+        self.do_qa = do_qa
+        if self.dataset_name == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
-        elif dataset == "librispeech":
+        elif self.dataset_name == "librispeech":
             from dataset.load_librispeech import librispeech_dataset_dict
             self.dataset = librispeech_dataset_dict[str(split)]
         else:
@@ -97,6 +100,19 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
                 {"role": "assistant", "content": example}
             ]
+
+    def _format_chat_qa(self, example, audio, gender, dialect, age):
+        messages = []
+        if self.lm_model_name != "gemma":
+            messages.append({
+                "role": "system", 
+                "content": "You transcribe speech to text and answer questions. You need to transcribe the speech as it is spoken and answer the questions."
+            })
+        messages.extend([
+            {"role": "user", "content": f"Listen to the following audio and transcribe it in lower case: {audio}. Based on what you hear, what is the gender of the speaker, what is their approximate age, and what is their dialect?"},
+            {"role": "assistant", "content": f"Transcription: {example}. \nThe gender of the speaker is {gender}, they're in their {round(float(age) / 10) * 10}'ies and the dialect is {dialect}."}])
+        return messages
+
         
     def __getitem__(self, idx):
         example = self.dataset[idx]
@@ -105,9 +121,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
         audio_features = self._audio_to_features(audio)
 
         # format as chat
-        conversation = self._format_chat(text, self.audio_token)
-        conversation_alt = self._format_chat(text, text)
-        
+        if (self.dataset_name == "coral") and self.do_qa:
+            conversation = self._format_chat_qa(text, self.audio_token, example["gender"], example["dialect"], example["age"])
+            conversation_alt = self._format_chat_qa(text, text, example["gender"], example["dialect"], example["age"])
+        else:
+            conversation = self._format_chat(text, self.audio_token)
+            conversation_alt = self._format_chat(text, text)
         # tokenize conversation with special handling for audio token
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
