@@ -3,7 +3,7 @@ import torchaudio
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
 from transformers import BatchFeature
-
+import math
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE
 
 
@@ -16,7 +16,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  num_audios: int = 1):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
         self.num_audios = num_audios
-        
+        self.dataset_name = dataset
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -87,6 +87,18 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 truncation=True,
             ).input_features[0]
 
+    def _format_chat_qa(self, example, audio, gender, dialect, age):
+        messages = []
+        if self.lm_model_name != "gemma":
+            messages.append({
+                "role": "system", 
+                "content": "You transcribe speech to text and answer questions. You need to transcribe the speech as it is spoken and answer the questions."
+            })
+        messages.extend([
+            {"role": "user", "content": f"Transcribe the following text in lower case: {audio}. What is the gender of the speaker, what is their approximate age, and what is their dialect?"},
+            {"role": "assistant", "content": f"Transcription: {example}. \nThe gender of the speaker is {gender}, they're in their {round(float(age) / 10) * 10}'ies and the dialect is {dialect}."}])
+        return messages
+    
     def _format_chat_multi(self, examples, audios):
         """Format multiple audio-transcription pairs as a chat"""
         messages = []
@@ -134,10 +146,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
             
             audio_features.append(features)
             texts.append(text)
-        
+        example = self.dataset[current_idx]
         # format conversations
-        conversation = self._format_chat_multi(texts, [self.audio_token] * self.num_audios)
-        conversation_alt = self._format_chat_multi(texts, texts)
+        #conversation = self._format_chat_multi(texts, [self.audio_token] * self.num_audios)
+        #conversation_alt = self._format_chat_multi(texts, texts)
+        conversation = self._format_chat_qa(example["text"], self.audio_token, gender=example["gender"], dialect=example["dialect"], age=example["age"])
+        conversation_alt = self._format_chat_qa(example["text"], example["text"], gender=example["gender"], dialect=example["dialect"], age=example["age"])
         
         # tokenize conversations
         tokenized = self.tokenizer.apply_chat_template(
