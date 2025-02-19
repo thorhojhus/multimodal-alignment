@@ -152,7 +152,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             optimizer.zero_grad()
             
             # # update loss monitoring
-            # loss_value = loss.item()
+            loss_value = loss.item()
             # loss_window.append(loss_value)
             # if len(loss_window) > window_size:
             #     loss_window.pop(0)
