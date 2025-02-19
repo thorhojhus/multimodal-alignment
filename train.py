@@ -180,7 +180,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         
         # calculate epoch statistics
         avg_loss = total_loss / len(dataloader)
-        epoch_time = time.time() - epoch_start_time
+        epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
         logger.info(
