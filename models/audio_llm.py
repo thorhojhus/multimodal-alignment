@@ -10,6 +10,7 @@ from torch.nn import functional as F
 
 from models.encoders import EncoderWrapper
 from models.linear_projector import Projector
+from models.tinyalign import BridgeFormer
 
 
 class AudioLLMModel(nn.Module):
@@ -57,6 +58,7 @@ class AudioLLMModel(nn.Module):
         # get dimensions for projector
         whisper_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return BridgeFormer(D_a=whisper_dim, T=150, D_l=embed_dim).to("cuda", torch.bfloat16)
         return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
