@@ -91,35 +91,40 @@ total_wer = 0.0
 total_cer = 0.0
 num_batches = 0
 
-for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
+for epoch in range(10):
+    for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
 
-    input_features = inputs["input_features"].to(device, non_blocking=True)
-    attention_mask = inputs["attention_mask"].to(device, non_blocking=True)
+        input_features = inputs["input_features"].to(device, non_blocking=True)
+        attention_mask = inputs["attention_mask"].to(device, non_blocking=True)
 
 
-    # Use autocast in float16 mode
-    with torch.inference_mode(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-        generated = model.generate(
-            input_features,
-            attention_mask=attention_mask,
-            forced_decoder_ids=forced_decoder_ids,
-            num_beams=1,
-            length_penalty=1.0,
-            use_cache=True
-        )
-    
-    predictions = processor.batch_decode(generated, skip_special_tokens=True)
-    batch_wer = wer(batch_refs, predictions)
-    batch_cer = cer(batch_refs, predictions)
-    total_wer += batch_wer
-    total_cer += batch_cer
-    num_batches += 1
+        # Use autocast in float16 mode
+        with torch.inference_mode(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            generated = model.generate(
+                input_features,
+                attention_mask=attention_mask,
+                forced_decoder_ids=forced_decoder_ids,
+                num_beams=5,
+                do_sample=True,
+                length_penalty=1.0,
+                use_cache=True
+            )
+        
+        predictions = processor.batch_decode(generated, skip_special_tokens=True)
+        batch_wer = wer(batch_refs, predictions)
+        batch_cer = cer(batch_refs, predictions)
+        total_wer += batch_wer
+        total_cer += batch_cer
+        num_batches += 1
 
-    # Periodic cache clearing
-    if num_batches % 10 == 0:
-        torch.cuda.empty_cache()
+        # Periodic cache clearing
+        if num_batches % 10 == 0:
+            torch.cuda.empty_cache()
 
-average_wer = total_wer / num_batches
-average_cer = total_cer / num_batches
-print(f"\nAverage WER: {average_wer:.4f}")
-print(f"\nAverage CER: {average_cer:.4f}")
+    average_wer = total_wer / num_batches
+    average_cer = total_cer / num_batches
+    print(f"\nAverage WER: {average_wer:.4f}")
+    print(f"\nAverage CER: {average_cer:.4f}")
+    with open(f"benchmark/outputs/{model_name}.txt", "a+") as file:
+        file.write(f"WER: {average_wer}\n")
+        file.write(f"CER: {average_cer}\n")
