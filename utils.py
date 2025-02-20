@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
 import jiwer
 from tqdm import tqdm
+import wandb
 from typing import Tuple, List
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
@@ -211,12 +212,104 @@ def run_evaluation(
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
     logger.info(f"Character Error Rate (CER): {cer:.4f}")
     
-    # log some example predictions
-    logger.info("\nExample predictions:")
-    for i in range(min(3, len(all_generated))):
-        logger.info(f"\nSample {i + 1}:")
-        logger.info(f"Generated: {all_generated[i]}")
-        logger.info(f"Ground truth: {all_ground_truths[i]}")
+    if config.wandb.enabled:
+            eval_table = wandb.Table(columns=["Generated", "Ground Truth"])
+            for gen, gt in zip(all_generated, all_ground_truths):
+                eval_table.add_data(gen, gt)
+            wandb.log({"evaluation_completions": eval_table})
     
     model.train()
     return wer, cer
+
+
+def calculate_eval_loss(
+    model: torch.nn.Module,
+    test_dataset: torch.utils.data.Dataset,
+    tokenizer,
+    logger: logging.Logger,
+    n_samples: int = None,
+    batch_size: int = 32
+) -> float:
+    """
+    Calculate average evaluation loss on test dataset.
+    
+    Args:
+        model: The AudioLLM model to evaluate
+        test_dataset: Dataset to evaluate on
+        tokenizer: Model tokenizer
+        logger: Logger instance
+        n_samples: Number of samples to evaluate (if None, uses full dataset)
+        batch_size: Batch size for evaluation
+    
+    Returns:
+        Average loss over the evaluated samples
+    """
+    model.eval()
+    
+    # adjust n_samples if it exceeds dataset size
+    if n_samples is None:
+        n_samples = len(test_dataset)
+    else:
+        n_samples = min(n_samples, len(test_dataset))
+    logger.info(f"Calculating evaluation loss on {n_samples} samples with batch size {batch_size}")
+    
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer),
+        shuffle=False 
+    )
+    
+    total_loss = 0.0
+    samples_processed = 0
+    num_batches = 0
+    
+    with torch.inference_mode():
+        for batch in tqdm(test_loader, desc="Evaluation Loss"):
+            if samples_processed >= n_samples:
+                break
+                
+            # move data to GPU
+            input_ids = batch["input_ids"].to("cuda", non_blocking=True)
+            if isinstance(batch["audio_features"], dict):
+                audio_features = {
+                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                }
+            else:
+                audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+            labels = batch["labels"].to("cuda", non_blocking=True)
+            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+            insertion_indices = batch["insertion_indices"]
+            
+            # forward pass
+            outputs = model(
+                input_ids=input_ids,
+                audio_features=audio_features,
+                labels=labels,
+                alt_input_ids=alt_input_ids,
+                alt_labels=alt_labels,
+                attention_mask=attention_mask,
+                insertion_indices=insertion_indices
+            )
+            
+            loss = outputs.loss
+            total_loss += loss.item()
+            num_batches += 1
+            samples_processed += input_ids.size(0)
+            
+            if samples_processed > n_samples:
+                # adjust for partial last batch
+                excess = samples_processed - n_samples
+                batch_loss_contribution = loss.item() * (input_ids.size(0) - excess) / input_ids.size(0)
+                total_loss = total_loss - loss.item() + batch_loss_contribution
+                samples_processed = n_samples
+                num_batches -= 1  # don't count partial batch fully
+    
+    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    logger.info(f"Average Evaluation Loss: {avg_loss:.4f} over {samples_processed} samples")
+    
+    model.train()
+    return avg_loss
