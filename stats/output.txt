@@ -1,2 +1,3 @@
-[WER] Test Statistic: 0.0625 with P-value: 0.0
-[CER] Test Statistic: 0.0625 with P-value: 0.0
+Wilcoxin Signed Rank Test Performed on the 2025-02-20T10:09:37.466719+00:00
+[WER] Test Statistic=0.0625 w. P-value=0.0
+[CER] Test Statistic=0.0625 w. P-value=0.0

@@ -2,6 +2,9 @@ from typing import Literal
 import numpy as np
 import argparse
 from scipy.stats import wilcoxon
+from datetime import datetime
+from datetime import timezone
+
 
 parser = argparse.ArgumentParser(description="Perform a Wilcoxin signed-rank test on two benchmarks.")
 parser.add_argument("file1", type=str, help="Path to the first benchmark file.")
@@ -30,10 +33,12 @@ def load_benchmarks(path_to_file: str) -> tuple[np.ndarray, np.ndarray]:
                 cer.append(float(line.split(" ")[1]))
     return np.asarray(wer), np.asanyarray(cer)
 
-def append_test_results(output_file_path:str, type: Literal["CER", "WER"], p: float, statistic_value: float) -> None:
+def append_test_results(output_file_path:str, types: list[Literal["CER", "WER"]], p_values: list[float], statistic_values: list[float]) -> None:
     """Append the wilcoxin test results to the output file."""
     with open(output_file_path, "a+") as file:
-        file.write(f"[{type}] Test Statistic: {statistic_value} with P-value: {p}\n")
+        file.write(f"Wilcoxin Signed Rank Test Performed on the {datetime.now(tz=timezone.utc).isoformat()}\n")
+        for type, p, statistic_value in zip(types, p_values, statistic_values):
+            file.write(f"[{type}] Test Statistic={statistic_value} w. P-value={p}\n")
 
 def wilcoxin_test(benchmark1: list[float], benchmark2: list[float]) -> float:
     """Perform a Wilcoxin signed-rank test on two benchmarks.
@@ -48,8 +53,7 @@ def main(args: argparse.Namespace) -> None:
     wer2, cer2 = load_benchmarks(args.file2)
     p_wer, statistic_wer = wilcoxin_test(wer1, wer2)
     p_cer, statistic_cer = wilcoxin_test(cer1, cer2)
-    append_test_results(args.outfile, "WER", p_wer, statistic_wer)
-    append_test_results(args.outfile, "CER", p_cer, statistic_cer)
+    append_test_results(args.outfile, ["WER", "CER"], [p_wer, p_cer], [statistic_wer, statistic_cer])
 
 if __name__ == "__main__":
     main(args)
