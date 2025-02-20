@@ -161,7 +161,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
                     })
             
-            # Save checkpoint if needed
+            # save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
                 save_checkpoint(
                     [model.projector], optimizer, scheduler,
@@ -169,10 +169,25 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     cfg.training.checkpoint_dir, logger
                 )
                 
-            # Run evaluation if needed
+            # run evaluation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
-                run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
+                wer, cer = run_evaluation(
+                                model=model,
+                                test_dataset=test_dataset,
+                                tokenizer=model.tokenizer,
+                                logger=logging.getLogger(__name__),
+                                n_samples=128,
+                                config=cfg,
+                                batch_size=32
+                            )
+                logger.info(
+                    f"WER: {wer:.2f} | CER: {cer:.2f}"
+                )
+                if cfg.wandb.enabled:
+                    wandb.log({
+                        "eval/wer": wer, "eval/cer": cer
+                    })
 
             
             # reset batch timer
@@ -182,7 +197,15 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         avg_loss = total_loss / len(dataloader)
         epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
-        
+        wer, cer = run_evaluation(
+                                model=model,
+                                test_dataset=test_dataset,
+                                tokenizer=model.tokenizer,
+                                logger=logging.getLogger(__name__),
+                                n_samples=None,
+                                config=cfg,
+                                batch_size=32
+                            )
         logger.info(
             f"Epoch {epoch+1} Summary | "
             f"Average Loss: {avg_loss:.4f} | "
