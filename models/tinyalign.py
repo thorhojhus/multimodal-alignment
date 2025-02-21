@@ -10,57 +10,79 @@ Inspired by the paper https://arxiv.org/html/2411.13766v1 which introduces the T
 """
 
 class MLP(nn.Module):
+    """Multi-layer perceptron with RMS normalization and GELU activation."""
     def __init__(self, input_dim: int, output_dim: int):
         super().__init__()
+        # Group normalization layers
+        self.norms = nn.ModuleList([
+            RMSNorm(output_dim) for _ in range(3)
+        ])
+        
+        # Group linear layers
+        self.linears = nn.ModuleList([
+            nn.Linear(input_dim, output_dim, bias=False),
+            nn.Linear(output_dim, output_dim, bias=False),
+            nn.Linear(output_dim, output_dim, bias=False)
+        ])
+        
         self.act = nn.GELU()
-        self.norm1 = RMSNorm(output_dim)
-        self.norm2 = RMSNorm(output_dim)
-        self.norm3 = RMSNorm(output_dim)
-        self.linear1 = nn.Linear(input_dim, output_dim, bias=False)
-        self.linear2 = nn.Linear(output_dim, output_dim, bias=False)
-        self.linear3 = nn.Linear(output_dim, output_dim, bias=False)
-    
+
     def forward(self, x: Tensor) -> Tensor:
-        x = self.linear1(x)
-        x = self.norm1(x)
-        x = self.act(x)
-        x = self.linear2(x)
-        x = self.norm2(x)
-        x = self.act(x)
-        x = self.linear3(x)
-        x = self.norm3(x)
-        x = self.act(x)
+        for linear, norm in zip(self.linears, self.norms):
+            x = linear(x)
+            x = norm(x)
+            x = self.act(x)
         return x
 
 
 class BridgeFormer(nn.Module):
-    """This is the BridgeFormert component of the TinyAlign framework"""
+    """BridgeFormer component of the TinyAlign framework.
+    Args:
+        D_a (int): Input audio feature dimension size
+        T (int): Target token length
+        D_l (int): Output feature dimension (LLM embedding dimenison)
+        H (int): Hidden dimension (default: 256)
+        M (int): Number of attention heads (default: 4)
+        E (int): Number of encoder layers (default: 4)
+    """
 
-    def __init__(self, D_a: int, T: int, D_l: int, H: int = 512, M: int = 4, E: int = 4):
+    def __init__(self, D_a: int, T: int, D_l: int, H: int = 256, M: int = 4, E: int = 4):
         super().__init__()
         
+        # Input projection
         self.input_mlp = MLP(D_a, H)
-        encoders = nn.TransformerEncoderLayer(
+        
+        # Transformer encoder setup
+        encoder_layer = nn.TransformerEncoderLayer(
             d_model=H,
             nhead=M,
-            batch_first=True
+            batch_first=True,
+            norm_first=True  # Pre-norm is generally more stable
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoders, num_layers=E)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=E)
+        
+        # Pooling and output projection
         self.adaptive_pooling = nn.AdaptiveAvgPool1d(output_size=T)
         self.output_mlp = MLP(H, D_l)
-
-
         
+        self._dimensions = {'D_a': D_a, 'T': T, 'D_l': D_l, 'H': H}
+
     def forward(self, audio_features: Tensor) -> Tensor:
-        # initial projection
-        output_features = self.input_mlp(audio_features)
-        # transformer encoder
-        output_features = self.transformer_encoder(output_features)
-        # adaptive pooling
-        output_features = self.adaptive_pooling(output_features.permute(0, 2, 1)).permute(0, 2, 1)
-        # final projection
-        output_features = self.output_mlp(output_features)
-        return output_features
+        # Input projection: [batch, seq_len, D_a] -> [batch, seq_len, H]
+        features = self.input_mlp(audio_features)
+        
+        # Transformer encoding: [batch, seq_len, H] -> [batch, seq_len, H]
+        features = self.transformer_encoder(features)
+        
+        # Adaptive pooling: [batch, seq_len, H] -> [batch, T, H]
+        features = features.permute(0, 2, 1)  # [batch, H, seq_len]
+        features = self.adaptive_pooling(features)  # [batch, H, T]
+        features = features.permute(0, 2, 1)  # [batch, T, H]
+        
+        # Output projection: [batch, T, H] -> [batch, T, D_l]
+        features = self.output_mlp(features)
+        
+        return features
 
 if __name__ == "__main__":
     # Example usage

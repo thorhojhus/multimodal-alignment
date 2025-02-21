@@ -3,7 +3,6 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-import torchinfo
 import hydra
 import torch
 import wandb
