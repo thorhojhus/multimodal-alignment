@@ -34,15 +34,14 @@ class AudioLLMModel(nn.Module):
 
 
     def _create_audio_tokenizer(self):
-        # from models.audio_tokenizer import AudioTokenizer, AudioTokenizerConfig
-        # embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        from models.ovis_audio import WhisperAudioTokenizer
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return WhisperAudioTokenizer(vocab_size=16384, 
+                                     embed_dim=embed_dim, 
+                                     hidden_stride=self.config.model.downsample_factor,
+                                     encoder_name=self.config.model.encoder_model_name)
 
-        # conf = AudioTokenizerConfig(vocab_size=2048, out_dim=embed_dim, backbone_name_or_path=self.config.model.encoder_model_name)
-        # return AudioTokenizer(config=conf)
-        from models.ovis_audio import WhisperAudioTokenizer, WhisperAudioTokenizerConfig
-        conf = WhisperAudioTokenizerConfig(
-            vocab_size=16384, hidden_size=self.lm.get_input_embeddings().weight.shape[1])
-        return WhisperAudioTokenizer(config=conf, processor_name_or_path=self.config.model.encoder_model_name,  train_from_scratch=True)
+
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
         quantization_config = transformers.BitsAndBytesConfig(
@@ -256,7 +255,7 @@ if __name__ == "__main__":
     T = 1024
     config = SimpleNamespace(
         model=SimpleNamespace(
-            whisper_model_name="openai/whisper-base",
+            encoder_model_name="openai/whisper-base",
             lm_model_name="HuggingFaceTB/SmolLM2-360M-Instruct",
             downsample_factor=10
         ),

@@ -1,263 +1,133 @@
-from typing import Union, Optional
-
+from typing import Optional
 import torch
+from torch import nn, Tensor
 from torch.nn import init
-from torch.nn.functional import softmax, pad
-from transformers import PretrainedConfig, PreTrainedModel, AutoModel, AutoConfig, WhisperModel, WhisperProcessor
+from torch.nn.functional import softmax
+from transformers import WhisperModel
 
+class AudioEmbedding(nn.Module):
+    """Embedding layer for audio tokens."""
+    def __init__(self, num_embeddings: int, embedding_dim: int, device=None, dtype=None):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, device=device, dtype=dtype)
+        self.reset_parameters()
 
-AUDIO_ATOM_ID = -300
-AUDIO_INDICATOR_IDS = [-301, -302, -303, -304, -305]  # Indicators for audio segments
-
-
-class AudioEmbedding(torch.nn.Embedding):
-    """Embedding layer for audio tokens, similar to VisualEmbedding in Ovis."""
-    def forward(self, audio_tokens: torch.Tensor) -> torch.Tensor:
+    def forward(self, audio_tokens: Tensor) -> Tensor:
         if audio_tokens.dtype in [torch.int8, torch.int16, torch.int32, torch.int64, torch.long]:
-            return super().forward(audio_tokens)
-        return torch.matmul(audio_tokens, self.weight)
+            return self.embedding(audio_tokens)
+        return torch.matmul(audio_tokens, self.embedding.weight)
 
     def reset_parameters(self, mean=0., std=1.) -> None:
-        init.normal_(self.weight, mean=mean, std=std)
-        self._fill_padding_idx_with_zero()
+        init.normal_(self.embedding.weight, mean=mean, std=std)
+        if self.embedding.padding_idx is not None:
+            with torch.no_grad():
+                self.embedding.weight[self.embedding.padding_idx].fill_(0)
 
-class BaseAudioTokenizerConfig(PretrainedConfig):
+class WhisperAudioTokenizer(nn.Module):
+    """Whisper-based audio tokenizer as an nn.Module."""
     def __init__(
         self,
-        vocab_size=16384,
-        tokenize_function="softmax",
-        sample_rate=16000,
-        backbone_config: Optional[Union[PretrainedConfig, dict]] = None,
-        hidden_stride: int = 5,  # Downsample by 5 (1500 -> 300)
-        hidden_size: int = 512,
-        **kwargs
+        vocab_size: int = 16384,
+        embed_dim: int = 512,
+        hidden_stride: int = 5,
+        encoder_name: str = "openai/whisper-tiny",
+        dtype: torch.dtype = torch.bfloat16,
+        device: Optional[torch.device] = None
     ):
-        super().__init__(**kwargs)
+        super().__init__()
+        
+        # set device
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dtype = dtype
+        
+        self.encoder = WhisperModel.from_pretrained(
+            encoder_name,
+            torch_dtype=dtype,
+            attn_implementation="flash_attention_2",
+            device_map=None,
+        ).encoder.to(self.device, torch.bfloat16)
+
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
+        # configuration
         self.vocab_size = vocab_size
-        self.tokenize_function = tokenize_function
-        self.sample_rate = sample_rate
-        self.backbone_kwargs = {}
-        if backbone_config is not None:
-            assert isinstance(backbone_config, (PretrainedConfig, dict)), \
-                f"expect `backbone_config` to be instance of PretrainedConfig or dict, but got {type(backbone_config)}"
-            if not isinstance(backbone_config, PretrainedConfig):
-                model_type = backbone_config['model_type']
-                backbone_config.pop('model_type')
-                backbone_config = AutoConfig.for_model(model_type, **backbone_config)
-        self.backbone_config = backbone_config
+        self.embed_dim = embed_dim
         self.hidden_stride = hidden_stride
-        self.hidden_size = hidden_size  # For embedding compatibility
-
-class BaseAudioTokenizer(PreTrainedModel):
-    base_model_prefix = "backbone"
-    main_input_name = "input_features"  # Whisper uses input_features (mel spectrograms)
-    _processor_class = WhisperProcessor
-    _processor_kwargs = {}
-    _backbone_class = WhisperModel
-
-    def __init__(self, config: BaseAudioTokenizerConfig, *inputs, **kwargs):
-        super().__init__(config, *inputs, **kwargs)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        dtype = torch.bfloat16
+        self.d_model = self.encoder.config.d_model
         
-        name_or_path = kwargs.get('processor_name_or_path') or kwargs.get('backbone_name_or_path')
-        if kwargs.get('train_from_scratch'):
-            if not name_or_path:
-                raise ValueError("`processor_name_or_path` or `backbone_name_or_path` must be provided when `train_from_scratch=True`")
-            self.processor = self._processor_class.from_pretrained(name_or_path, **self._processor_kwargs)
-            self.backbone = self._backbone_class.from_pretrained(
-                name_or_path,
-                torch_dtype=dtype,
-                attn_implementation="flash_attention_2",
-                device_map="cuda",
-                **self.config.backbone_kwargs
-            ).to(device)
-            self.config.backbone_config = self.backbone.config
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-        else:
-            if not name_or_path:
-                raise ValueError("`processor_name_or_path` must be provided when `train_from_scratch=False`")
-            self.processor = WhisperProcessor.from_pretrained(name_or_path)
-            self.backbone = AutoModel.from_config(self.config.backbone_config, torch_dtype=dtype).to(device)
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-        
-        head_dim = self.config.vocab_size - len(AUDIO_INDICATOR_IDS)
-        self.head = torch.nn.Sequential(
-            torch.nn.Linear(
-                self.backbone.config.d_model * self.config.hidden_stride, head_dim, bias=False
-            ).to(dtype=dtype, device=device),
-            torch.nn.LayerNorm(head_dim).to(dtype=dtype, device=device)
+        # head layers
+        self.head = nn.Sequential(
+            nn.Linear(
+                self.d_model * hidden_stride,
+                vocab_size,
+                bias=False,
+                device=self.device,
+                dtype=dtype
+            ),
+            nn.LayerNorm(vocab_size, device=self.device, dtype=dtype)
         )
-
+        
+        # audio embedding
         self.audio_embedding = AudioEmbedding(
-            num_embeddings=self.config.vocab_size,
-            embedding_dim=self.config.hidden_size,
-            device=device,
+            num_embeddings=vocab_size,
+            embedding_dim=embed_dim,
+            device=self.device,
             dtype=dtype
         )
 
-    def get_backbone(self):
-        return self.backbone
-
-    def get_monitor_tensors(self):
-        return {
-            "backbone_bottom": self.backbone.encoder.layers[0].self_attn.k_proj.weight,
-            "backbone_top": self.backbone.encoder.layers[-1].self_attn.out_proj.weight,
-            "head": self.head[0].weight,
-            "audio_embedding": self.audio_embedding.weight
-        }
-
-    def get_processor(self):
-        return self.processor
-
-    def get_audio_embedding(self):
-        return self.audio_embedding
-
-    def mock_input(self):
-        # Mock 30-second audio at 16kHz
-        audio_length = self.config.sample_rate * 30
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.zeros(1, audio_length, dtype=torch.bfloat16, device=device), self.construct_audio_placeholders((1,))
-
-    def get_head(self):
-        return self.head
-
-    @staticmethod
-    def construct_audio_placeholders(grid):
-        # Simplified for 1D audio segmentation
-        audio_placeholders = [AUDIO_INDICATOR_IDS[0], AUDIO_ATOM_ID, AUDIO_INDICATOR_IDS[1]]
-        if grid[0] > 1:
-            for i in range(grid[0]):
-                audio_placeholders.append(AUDIO_ATOM_ID)
-                if i < grid[0] - 1:
-                    audio_placeholders.append(AUDIO_INDICATOR_IDS[2])
-        audio_placeholders.append(AUDIO_INDICATOR_IDS[4])
-        return audio_placeholders
-
-    def preprocess_audio(self, audio: torch.Tensor, max_segments=9, segment_duration=30.0):
-        """
-        Preprocess audio by splitting into segments if necessary and converting to mel spectrograms.
-        Audio is assumed to be a tensor of shape [audio_length].
-        """
-        sample_rate = self.config.sample_rate
-        audio_length = audio.shape[-1]
-        total_duration = audio_length / sample_rate
-        device = audio.device
-        dtype = torch.bfloat16
-
-        def _preprocess_segment(segment):
-            target_length = int(sample_rate * segment_duration)
-            if segment.shape[-1] < target_length:
-                segment = pad(segment, (0, target_length - segment.shape[-1]), "constant", 0)
-            elif segment.shape[-1] > target_length:
-                segment = segment[:target_length]
-            # Move to CPU and convert to float32 for Whisper processor compatibility
-            segment_np = segment.cpu().to(torch.float32).numpy()
-            inputs = self.processor(segment_np, sampling_rate=sample_rate, return_tensors="pt")
-            # Move back to CUDA and bfloat16
-            return inputs["input_features"].to(dtype=dtype, device=device)  # [1, n_mels, 3000] for 30s audio
-
-        def _get_best_segments(duration):
-            if duration <= segment_duration:
-                return [1]  # Single segment
-            num_segments = min(max_segments, int((duration + segment_duration - 1) // segment_duration))
-            return [num_segments]
-
-        grid = _get_best_segments(total_duration)
-        num_segments = grid[0]
-        
-        if num_segments == 1:
-            input_features = _preprocess_segment(audio)
-        else:
-            segment_length = audio_length // num_segments
-            segments = [audio[i * segment_length:(i + 1) * segment_length] for i in range(num_segments)]
-            input_features = torch.cat([_preprocess_segment(seg) for seg in segments], dim=0)
-
-        audio_placeholders = self.construct_audio_placeholders(grid)
-        return input_features, audio_placeholders
-
-    def tokenize(self, logits):
-        # we just use softmax for now
-        tokens = softmax(logits, dim=-1)
-        return tokens
-
-    def encode(self, input_features):
+    def encode(self, input_features: Tensor) -> Tensor:
+        """Encode audio features using the Whisper backbone."""
         with torch.no_grad():
-            encoder_outputs = self.backbone.encoder(input_features, return_dict=True)
-        features = encoder_outputs.last_hidden_state  # [batch_size, 1500, d_model]
+            encoder_outputs = self.encoder(input_features, return_dict=True)
+        features = encoder_outputs.last_hidden_state  # [batch_size, seq_len, d_model]
 
-        if self.config.hidden_stride > 1:
+        if self.hidden_stride > 1:
             n, l, d = features.shape
-            assert l % self.config.hidden_stride == 0, "Sequence length must be divisible by hidden_stride"
-            features = features.reshape(n, l // self.config.hidden_stride, self.config.hidden_stride * d)
+            assert l % self.hidden_stride == 0, "Sequence length must be divisible by hidden_stride"
+            features = features.reshape(n, l // self.hidden_stride, self.hidden_stride * d)
         
         return features
 
-    def forward(self, input_features) -> torch.Tensor:
-        # [BatchSize, n_mels, 3000] -> [BatchSize, #Token, HiddenSize]
-        features = self.encode(input_features)  # [batch_size, 300, d_model * hidden_stride]
-        logits = self.head(features)  # [batch_size, 300, head_dim]
-        tokens = self.tokenize(logits)  # [batch_size, 300, vocab_size - 5]
-        
-        # Pad with reserved tokens
-        batch_size, token_len, _ = tokens.shape
-        device = tokens.device
-        padding_tensor = torch.zeros(
-            size=(batch_size, token_len, len(AUDIO_INDICATOR_IDS)),
-            dtype=torch.bfloat16,
-            device=device,
-            requires_grad=False
-        )
-        tokens = torch.cat((tokens, padding_tensor), dim=2)
+    def tokenize(self, logits: Tensor) -> Tensor:
+        """Convert logits to token probabilities using softmax."""
+        return softmax(logits, dim=-1)
 
-        # apply embedding to get hidden representations
-        embeds = self.audio_embedding(tokens)  # [batch_size, 300, hidden_size]
+    def forward(self, input_features: Tensor) -> Tensor:
+        """
+        Forward pass of the audio tokenizer.
+        
+        Args:
+            input_features (Tensor): Input mel spectrograms [batch_size, n_mels, time_steps]
+            
+        Returns:
+            Tensor: Embedded audio tokens [batch_size, num_tokens, hidden_size]
+        """
+        features = self.encode(input_features)  # [batch_size, seq_len/hidden_stride, d_model * hidden_stride]
+        
+        logits = self.head(features)  # [batch_size, seq_len/hidden_stride, vocab_size]
+        
+        tokens = self.tokenize(logits)  # [batch_size, seq_len/hidden_stride, vocab_size]
+        
+        embeds = self.audio_embedding(tokens)  # [batch_size, num_tokens, hidden_size]
         return embeds
 
-MODEL_TYPE = "whisper_audio_tokenizer"
-
-class WhisperAudioTokenizerConfig(BaseAudioTokenizerConfig):
-    model_type = MODEL_TYPE
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-class WhisperAudioTokenizer(BaseAudioTokenizer):
-    config_class = WhisperAudioTokenizerConfig
-    supports_gradient_checkpointing = True
-    _no_split_modules = ["WhisperEncoderLayer"]
-    _processor_class = WhisperProcessor
-    _processor_kwargs = {}
-    _backbone_class = WhisperModel
-
-    def get_monitor_tensors(self):
-        return dict(
-            backbone_bottom=self.backbone.encoder.layers[0].self_attn.k_proj.weight,
-            backbone_top=self.backbone.encoder.layers[-1].self_attn.out_proj.weight,
-            head=self.head[0].weight,
-            audio_embedding=self.audio_embedding.weight
-        )
-
-AutoConfig.register(MODEL_TYPE, WhisperAudioTokenizerConfig)
-AutoModel.register(WhisperAudioTokenizerConfig, WhisperAudioTokenizer)
-
-# Usage Example
 if __name__ == "__main__":
-    # Ensure CUDA is available
+    # ensure CUDA is available
     assert torch.cuda.is_available(), "CUDA is required for this script"
 
-    config = WhisperAudioTokenizerConfig(
-        backbone_config=AutoConfig.from_pretrained("openai/whisper-tiny"),
-        hidden_size=512  # Match Whisper's d_model
+    # initialize the tokenizer
+    tokenizer = WhisperAudioTokenizer(
+        vocab_size=16384,
+        embed_dim=512,
+        hidden_stride=5,
+        encoder_name="openai/whisper-tiny",
     )
-    tokenizer = WhisperAudioTokenizer(config, processor_name_or_path="openai/whisper-tiny", train_from_scratch=True)
 
-    # Mock audio: 30 seconds at 16kHz, bfloat16, CUDA
-    audio = torch.randn(480000, dtype=torch.bfloat16, device="cuda")
-    input_features, placeholders = tokenizer.preprocess_audio(audio)
+    # mock audio input: assuming preprocessed mel spectrograms
+    input_features = torch.randn(1, 80, 3000, dtype=torch.bfloat16, device="cuda")
+
     embeds = tokenizer(input_features)
-    print(embeds.shape)  # Expected: [1, 300, 512]
+    print(embeds.shape)  # Expected: [1, 600, 512] (3000 / 5 = 600 tokens)
     print(embeds.dtype)  # Expected: torch.bfloat16
     print(embeds.device)  # Expected: cuda:0
