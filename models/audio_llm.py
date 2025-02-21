@@ -17,9 +17,12 @@ class AudioLLMModel(nn.Module):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         self.lm = self._create_lm()
-        self.projector = self._create_projector()
+        if self.config.model.audio_tokenizer:
+            self.audio_encoder = self._create_audio_tokenizer()
+        else:
+            self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
+            self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
         # setup special tokens
         self.audio_token_str = "<|audio|>"
@@ -29,6 +32,11 @@ class AudioLLMModel(nn.Module):
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
+
+    def _create_audio_tokenizer(self):
+        from models.audio_tokenizer import AudioTokenizer, AudioTokenizerConfig
+        conf = AudioTokenizerConfig(vocab_size=16384, backbone_name_or_path=self.config.model.encoder_model_name)
+        return AudioTokenizer(config=conf, out_dim=self.lm.get_input_embeddings().weight.shape[1])
 
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
@@ -71,10 +79,7 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            if isinstance(audio_features, dict):
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            else:
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
     
@@ -148,11 +153,16 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, **kwargs
+        alt_labels: Optional[Tensor] = None, 
+        audio_durations: int = None, **kwargs
     ) -> Any:
-                
+        
         # process audio and text features
-        audio_embeds = self._process_audio_features(audio_features)
+        if self.config.model.audio_tokenizer:
+            audio_embeds = self.audio_encoder(audio_features, audio_durations)
+        else:
+            audio_embeds = self._process_audio_features(audio_features)
+
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences

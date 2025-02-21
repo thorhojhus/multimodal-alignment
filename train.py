@@ -61,10 +61,15 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     )
     
     print_parameter_count(model, logger)
-        
-    trainable_params = [
-        {"params": list(model.projector.parameters())},
-    ]
+    
+    if cfg.model.audio_tokenizer:
+        trainable_params = [
+            {"params": list(model.audio_encoder.parameters())},
+        ]
+    else:
+        trainable_params = [
+            {"params": list(model.projector.parameters())},
+        ]
     
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     
@@ -115,6 +120,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             else:
                 # for other models (Whisper, CLAP, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+                audio_durations = batch["audio_duration"]
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
@@ -129,7 +135,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 alt_input_ids=alt_input_ids,
                 alt_labels=alt_labels,
                 attention_mask=attention_mask,
-                insertion_indices=insertion_indices
+                insertion_indices=insertion_indices,
+                audio_durations=audio_durations
             )
 
             # backward pass
