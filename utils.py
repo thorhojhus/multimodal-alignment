@@ -127,6 +127,7 @@ def generate_batch(
             attention_mask=user_prompt_masks,
             max_new_tokens=max_new_tokens,
             do_sample=False,
+            audio_durations=batch["audio_duration"],
         )
 
     generated_texts = [
@@ -166,6 +167,7 @@ def run_evaluation(
         Tuple of (WER, CER) metrics
     """
     model.eval()
+    torch.cuda.empty_cache()
     model_name = config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
     
     # adjust n_samples if it exceeds dataset size
@@ -187,7 +189,7 @@ def run_evaluation(
     samples_processed = 0
 
     logger.info("Generating predictions...")
-    for batch in tqdm(test_loader):
+    for batch in test_loader:
         if samples_processed >= n_samples:
             break
             
@@ -217,7 +219,7 @@ def run_evaluation(
             for gen, gt in zip(all_generated, all_ground_truths):
                 eval_table.add_data(gen, gt)
             wandb.log({"evaluation_completions": eval_table})
-    
+    torch.cuda.empty_cache()
     model.train()
     return wer, cer
 
@@ -245,6 +247,7 @@ def calculate_eval_loss(
         Average loss over the evaluated samples
     """
     model.eval()
+    torch.cuda.empty_cache()
     
     # adjust n_samples if it exceeds dataset size
     if n_samples is None:
@@ -265,7 +268,7 @@ def calculate_eval_loss(
     num_batches = 0
     
     with torch.inference_mode():
-        for batch in tqdm(test_loader, desc="Evaluation Loss"):
+        for batch in test_loader:
             if samples_processed >= n_samples:
                 break
                 
@@ -310,6 +313,6 @@ def calculate_eval_loss(
     
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     logger.info(f"Average Evaluation Loss: {avg_loss:.4f} over {samples_processed} samples")
-    
+    torch.cuda.empty_cache()
     model.train()
     return avg_loss

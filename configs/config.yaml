@@ -10,7 +10,7 @@ model:
   lm_model_name: "HuggingFaceTB/SmolLM2-360M-Instruct"
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
-  audio_tokenizer: true
+  audio_tokenizer: false
 
 training:
   num_epochs: 3

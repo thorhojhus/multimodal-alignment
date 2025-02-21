@@ -62,14 +62,9 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     
     print_parameter_count(model, logger)
     
-    if cfg.model.audio_tokenizer:
-        trainable_params = [
-            {"params": list(model.audio_encoder.parameters())},
-        ]
-    else:
-        trainable_params = [
-            {"params": list(model.projector.parameters())},
-        ]
+    trainable_params = [
+        {"params": list(model.projector.parameters())},
+    ]
     
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     

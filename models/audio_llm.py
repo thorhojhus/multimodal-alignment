@@ -19,7 +19,7 @@ class AudioLLMModel(nn.Module):
         # create model components
         self.lm = self._create_lm()
         if self.config.model.audio_tokenizer:
-            self.audio_encoder = self._create_audio_tokenizer()
+            self.projector = self._create_audio_tokenizer()
         else:
             self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
             self.projector = self._create_projector()
@@ -34,10 +34,15 @@ class AudioLLMModel(nn.Module):
 
 
     def _create_audio_tokenizer(self):
-        from models.audio_tokenizer import AudioTokenizer, AudioTokenizerConfig
-        conf = AudioTokenizerConfig(vocab_size=16384, backbone_name_or_path=self.config.model.encoder_model_name)
-        return AudioTokenizer(config=conf, out_dim=self.lm.get_input_embeddings().weight.shape[1])
+        # from models.audio_tokenizer import AudioTokenizer, AudioTokenizerConfig
+        # embed_dim = self.lm.get_input_embeddings().weight.shape[1]
 
+        # conf = AudioTokenizerConfig(vocab_size=2048, out_dim=embed_dim, backbone_name_or_path=self.config.model.encoder_model_name)
+        # return AudioTokenizer(config=conf)
+        from models.ovis_audio import WhisperAudioTokenizer, WhisperAudioTokenizerConfig
+        conf = WhisperAudioTokenizerConfig(
+            vocab_size=16384, hidden_size=self.lm.get_input_embeddings().weight.shape[1])
+        return WhisperAudioTokenizer(config=conf, processor_name_or_path=self.config.model.encoder_model_name,  train_from_scratch=True)
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
         quantization_config = transformers.BitsAndBytesConfig(
@@ -159,7 +164,7 @@ class AudioLLMModel(nn.Module):
         
         # process audio and text features
         if self.config.model.audio_tokenizer:
-            audio_embeds = self.audio_encoder(audio_features, audio_durations)
+            audio_embeds = self.projector(audio_features)
         else:
             audio_embeds = self._process_audio_features(audio_features)
 
@@ -189,11 +194,14 @@ class AudioLLMModel(nn.Module):
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
         insertion_indices: Tensor, attention_mask: Tensor,
-        max_new_tokens: int = 100,
+        max_new_tokens: int = 100, audio_durations: int = None,
         **generation_kwargs: Any
     ) -> Tensor:
         # process audio and text features
-        audio_embeds = self._process_audio_features(audio_features)
+        if self.config.model.audio_tokenizer:
+            audio_embeds = self.projector(audio_features)
+        else:
+            audio_embeds = self._process_audio_features(audio_features)
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
