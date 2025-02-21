@@ -13,20 +13,22 @@ class MLP(nn.Module):
     def __init__(self, input_dim: int, output_dim: int):
         super().__init__()
         self.act = nn.GELU()
-        self.norm = RMSNorm(output_dim)
+        self.norm1 = RMSNorm(output_dim)
+        self.norm2 = RMSNorm(output_dim)
+        self.norm3 = RMSNorm(output_dim)
         self.linear1 = nn.Linear(input_dim, output_dim, bias=False)
         self.linear2 = nn.Linear(output_dim, output_dim, bias=False)
         self.linear3 = nn.Linear(output_dim, output_dim, bias=False)
     
     def forward(self, x: Tensor) -> Tensor:
         x = self.linear1(x)
-        x = self.norm(x)
+        x = self.norm1(x)
         x = self.act(x)
         x = self.linear2(x)
-        x = self.norm(x)
+        x = self.norm2(x)
         x = self.act(x)
         x = self.linear3(x)
-        x = self.norm(x)
+        x = self.norm3(x)
         x = self.act(x)
         return x
 
@@ -34,7 +36,7 @@ class MLP(nn.Module):
 class BridgeFormer(nn.Module):
     """This is the BridgeFormert component of the TinyAlign framework"""
 
-    def __init__(self, D_a: int, T: int, D_l: int, H: int = 256, M: int = 4, E: int = 4):
+    def __init__(self, D_a: int, T: int, D_l: int, H: int = 512, M: int = 4, E: int = 4):
         super().__init__()
         
         self.input_mlp = MLP(D_a, H)

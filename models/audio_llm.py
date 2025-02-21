@@ -30,6 +30,8 @@ class AudioLLMModel(nn.Module):
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
 
+        self.alpha = 1.0
+        self.beta = 1.0
         self.MSELoss = nn.MSELoss()
         self.CosSim = nn.CosineSimilarity()
 
@@ -76,8 +78,8 @@ class AudioLLMModel(nn.Module):
 
     def bridgeformer_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
         # Calculate loss for TinyAlign BridgeFormer
-        loss: Tensor = 0.5 * self.MSELoss(audio_embeddings, text_embeddings) + 0.5 * (1 - self.CosSim(audio_embeddings, text_embeddings))
-        return loss.sum()
+        loss = self.alpha * self.MSELoss(audio_embeddings, text_embeddings) + self.beta * (1 - self.CosSim(audio_embeddings, text_embeddings)).mean()
+        return loss
 
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features

@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train_tinyalign.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-base training.batch_size=64 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
+python train_tinyalign.py model.projector=tinyalign model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-base training.batch_size=64 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
 #python train.py

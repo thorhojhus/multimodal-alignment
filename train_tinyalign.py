@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
+import torchinfo
 import hydra
 import torch
 import wandb
@@ -119,7 +119,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 # for other models (Whisper, CLAP, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             
-            # forward pass
+            # "forward" pass
             text_embeddings = model.lm.get_input_embeddings()(input_ids)
             audio_embeddings = model._process_audio_features(audio_features)
             loss = model.bridgeformer_loss(audio_embeddings.flatten(start_dim=1), text_embeddings.flatten(start_dim=1))
@@ -194,14 +194,13 @@ def main(cfg: DictConfig):
     # initialize components using config values from Hydra
 
     model = AudioLLMModel(cfg)
-
     # freeze non-trainable components
     for param in model.lm.parameters():
         param.requires_grad = False
 
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-    
+
     train(model, cfg)
 
 if __name__ == "__main__":

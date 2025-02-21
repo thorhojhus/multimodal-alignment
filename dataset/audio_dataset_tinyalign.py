@@ -2,7 +2,6 @@ import torch
 import torchaudio
 from transformers import AutoProcessor, AutoTokenizer
 from transformers import BatchFeature
-from functools import partial
 
 """
 
@@ -16,7 +15,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
                  processor=None,
-                 T=100):
+                 T=30):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
