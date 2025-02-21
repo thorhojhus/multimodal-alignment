@@ -10,6 +10,7 @@ model:
   downsample_factor: 10
   lm_model_name: "HuggingFaceTB/SmolLM2-1.7B-Instruct"
   encoder_model_name: "openai/whisper-large-v3-turbo"
+  projector: "simple"
 
 training:
   num_epochs: 1
