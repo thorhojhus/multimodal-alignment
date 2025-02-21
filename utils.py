@@ -127,7 +127,6 @@ def generate_batch(
             attention_mask=user_prompt_masks,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            audio_durations=batch["audio_duration"],
         )
 
     generated_texts = [

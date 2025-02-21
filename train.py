@@ -115,7 +115,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             else:
                 # for other models (Whisper, CLAP, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
-                audio_durations = batch["audio_duration"]
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
@@ -131,7 +130,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 alt_labels=alt_labels,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
-                audio_durations=audio_durations
             )
 
             # backward pass

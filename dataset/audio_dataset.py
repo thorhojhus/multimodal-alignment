@@ -105,7 +105,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         audio_array = torch.tensor(audio["array"], dtype=torch.float32)
         audio_sampling_rate = audio["sampling_rate"]
         audio_features = self._audio_to_features(audio_array, audio_sampling_rate)
-        audio_duration = audio_array.size(0) / audio_sampling_rate
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
         conversation_alt = self._format_chat(text, text)
@@ -140,7 +139,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         return {
             "input_ids": tokenized,
             "audio_features": audio_features,
-            "audio_duration": audio_duration,
             "labels": labels,
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
@@ -262,7 +260,6 @@ def collate_fn(batch, tokenizer):
     return {
         "input_ids": prepared_input_ids,
         "audio_features": audio_features,
-        "audio_duration": [item["audio_duration"] for item in batch],
         "labels": prepared_labels,
         "attention_mask": prepared_attention_mask,
         "insertion_indices": prepared_insertion_indices,

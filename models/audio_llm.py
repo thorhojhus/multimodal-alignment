@@ -34,10 +34,10 @@ class AudioLLMModel(nn.Module):
 
 
     def _create_audio_tokenizer(self):
-        from models.ovis_audio import WhisperAudioTokenizer
+        from models.audio_tokenizer import AudioTokenizer
         whisper_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-        return WhisperAudioTokenizer(vocab_size=self.config.model.audio_tokenizer_vocab_size, 
+        return AudioTokenizer(vocab_size=self.config.model.audio_tokenizer_vocab_size, 
                                      embed_dim=embed_dim, 
                                      hidden_stride=self.config.model.downsample_factor,
                                      d_model=whisper_dim)
@@ -158,8 +158,7 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, 
-        audio_durations: int = None, **kwargs
+        alt_labels: Optional[Tensor] = None, **kwargs
     ) -> Any:
         
         # process audio and text features
@@ -191,7 +190,7 @@ class AudioLLMModel(nn.Module):
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
         insertion_indices: Tensor, attention_mask: Tensor,
-        max_new_tokens: int = 100, audio_durations: int = None,
+        max_new_tokens: int = 100,
         **generation_kwargs: Any
     ) -> Tensor:
         
