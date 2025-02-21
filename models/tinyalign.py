@@ -9,26 +9,35 @@ Inspired by the paper https://arxiv.org/html/2411.13766v1 which introduces the T
 
 """
 
+class MLP(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.act = nn.GELU()
+        self.norm = RMSNorm(output_dim)
+        self.linear1 = nn.Linear(input_dim, output_dim, bias=False)
+        self.linear2 = nn.Linear(output_dim, output_dim, bias=False)
+        self.linear3 = nn.Linear(output_dim, output_dim, bias=False)
+    
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.linear1(x)
+        x = self.norm(x)
+        x = self.act(x)
+        x = self.linear2(x)
+        x = self.norm(x)
+        x = self.act(x)
+        x = self.linear3(x)
+        x = self.norm(x)
+        x = self.act(x)
+        return x
+
+
 class BridgeFormer(nn.Module):
     """This is the BridgeFormert component of the TinyAlign framework"""
-
-    def _setup_mlp(self, input_dim: int, hidden_dim: int) -> nn.Sequential:
-        return nn.Sequential(
-            nn.Linear(input_dim, hidden_dim, bias=False),
-            RMSNorm(hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim, bias=False),
-            RMSNorm(hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim, bias=False),
-            RMSNorm(hidden_dim),
-            nn.GELU(),
-        )
 
     def __init__(self, D_a: int, T: int, D_l: int, H: int = 256, M: int = 4, E: int = 4):
         super().__init__()
         
-        self.input_mlp = self._setup_mlp(D_a, H)
+        self.input_mlp = MLP(D_a, H)
         encoders = nn.TransformerEncoderLayer(
             d_model=H,
             nhead=M,
@@ -36,7 +45,7 @@ class BridgeFormer(nn.Module):
         )
         self.transformer_encoder = nn.TransformerEncoder(encoders, num_layers=E)
         self.adaptive_pooling = nn.AdaptiveAvgPool1d(output_size=T)
-        self.output_mlp = self._setup_mlp(H, D_l)
+        self.output_mlp = MLP(H, D_l)
 
 
         

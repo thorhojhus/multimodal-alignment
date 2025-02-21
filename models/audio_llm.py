@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, List, Optional, Tuple, Union, Dict
+from typing import Any, List, Literal, Optional, Tuple, Union, Dict
 
 import torch
 import transformers
@@ -20,7 +20,7 @@ class AudioLLMModel(nn.Module):
         # create model components
         self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         self.lm = self._create_lm()
-        self.projector = self._create_projector()
+        self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
         # setup special tokens
         self.audio_token_str = "<|audio|>"
@@ -29,6 +29,9 @@ class AudioLLMModel(nn.Module):
         if self.tokenizer.pad_token == self.tokenizer.eos_token:
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
+
+        self.MSELoss = nn.MSELoss()
+        self.CosSim = nn.CosineSimilarity()
 
 
     def _create_lm(self) -> nn.Module:
@@ -54,12 +57,13 @@ class AudioLLMModel(nn.Module):
             param.requires_grad = False
         return lm
 
-    def _create_projector(self) -> Projector:
+    def _create_projector(self, type: Literal["simple", "tinyalign"]) -> Projector:
         # get dimensions for projector
-        whisper_dim = self.audio_encoder.get_proj_dim()
+        encoder_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-        return BridgeFormer(D_a=whisper_dim, T=150, D_l=embed_dim).to("cuda", torch.bfloat16)
-        return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        if type == "tinyalign":
+            return BridgeFormer(D_a=encoder_dim, T=150, D_l=embed_dim).to("cuda", torch.bfloat16)
+        return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
         # initialize tokenizer from language model
@@ -69,6 +73,11 @@ class AudioLLMModel(nn.Module):
         # add audio token if not in vocabulary
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
+
+    def bridgeformer_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
+        # Calculate loss for TinyAlign BridgeFormer
+        loss: Tensor = 0.5 * self.MSELoss(audio_embeddings, text_embeddings) + 0.5 * (1 - self.CosSim(audio_embeddings, text_embeddings))
+        return loss.sum()
 
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
