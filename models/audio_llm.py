@@ -2,7 +2,8 @@ from types import SimpleNamespace
 from typing import Any, List, Optional, Tuple, Union, Dict
 
 import torch
-import transformers
+from transformers import BitsAndBytesConfig, PreTrainedTokenizer, AutoTokenizer
+from transformers.modeling_outputs import CausalLMOutputWithPast
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch import Tensor, nn
@@ -59,7 +60,7 @@ class AudioLLMModel(nn.Module):
 
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
-        quantization_config = transformers.BitsAndBytesConfig(
+        quantization_config = BitsAndBytesConfig(
             load_in_4bit=True, 
             bnb_4bit_quant_type="nf4", 
             bnb_4bit_use_double_quant=True, 
@@ -86,9 +87,9 @@ class AudioLLMModel(nn.Module):
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return Projector(whisper_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
-    def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
+    def _setup_tokenizer(self) -> PreTrainedTokenizer:
         # initialize tokenizer from language model
-        return transformers.AutoTokenizer.from_pretrained(self.config.model.lm_model_name)
+        return AutoTokenizer.from_pretrained(self.config.model.lm_model_name)
 
     def _add_special_token(self) -> None:
         # add audio token if not in vocabulary
@@ -186,6 +187,16 @@ class AudioLLMModel(nn.Module):
             if text_embeds.size(1) != self.token_size:
                 pad_size = self.token_size - text_embeds.size(1)
                 text_embeds = F.pad(text_embeds, (0, 0, 0, pad_size), "constant", 0)
+            if self.config.training.use_clip_loss:
+                E_a = F.normalize(audio_embeds, dim=-1)
+                E_t = F.normalize(text_embeds, dim=-1)
+
+                logits = torch.bmm(E_a, E_t.transpose(1, 2))
+                labels = torch.arange(audio_embeds.size(1)).to(audio_embeds.device)
+                loss = F.cross_entropy(logits.view(-1, audio_embeds.size(1)), 
+                                    labels.repeat(audio_embeds.size(0)))
+                return SimpleNamespace(loss=loss)
+
             loss = F.mse_loss(audio_embeds, text_embeds) + (1 - F.cosine_similarity(audio_embeds, text_embeds, dim=2).mean())
             return SimpleNamespace(loss=loss)
         
@@ -242,7 +253,7 @@ class AudioLLMModel(nn.Module):
 
     def _compute_kl_loss(
         self,
-        lm_output: transformers.modeling_outputs.CausalLMOutputWithPast,
+        lm_output: CausalLMOutputWithPast,
         labels: Optional[torch.Tensor] = None,
         alt_input_ids: Optional[torch.Tensor] = None,
         alt_attention_mask: Optional[torch.Tensor] = None,

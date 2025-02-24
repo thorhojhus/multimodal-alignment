@@ -27,6 +27,7 @@ training:
   log_every_n_steps: 10
   kl_loss: true
   kl_temp: 2.0
+  use_clip_loss: false
 
 eval:
   n_samples: 128
