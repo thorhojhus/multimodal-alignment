@@ -18,6 +18,7 @@ from utils import (
     print_parameter_count,
     run_evaluation,
     save_checkpoint,
+    calculate_eval_loss
 )
 
 # set up a module-level logger
@@ -161,20 +162,51 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
                     })
             
-            # Save checkpoint if needed
+            # save checkpoint if needed
             if global_step % cfg.training.save_every_n_steps == 0:
                 save_checkpoint(
                     [model.projector], optimizer, scheduler,
                     global_step, loss.item(), 
                     cfg.training.checkpoint_dir, logger
                 )
-                
-            # Run evaluation if needed
+
+            # run evaluation and loss calculation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
                 logger.info("\nRunning evaluation at step %d", global_step)
-                run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
+                
+                # calculate evaluation loss
+                eval_loss = calculate_eval_loss(
+                    model=model,
+                    test_dataset=test_dataset,
+                    tokenizer=model.tokenizer,
+                    logger=logger,
+                    n_samples=cfg.eval.n_samples,
+                    batch_size=cfg.eval.batch_size
+                )
+                
+                # run WER/CER evaluation
+                wer, cer = run_evaluation(
+                    model=model,
+                    test_dataset=test_dataset,
+                    tokenizer=model.tokenizer,
+                    logger=logger,
+                    n_samples=cfg.eval.n_samples,
+                    config=cfg,
+                    batch_size=cfg.eval.batch_size
+                )
+                
+                logger.info(
+                    f"Step {global_step} Evaluation | "
+                    f"Eval Loss: {eval_loss:.4f} | "
+                    f"WER: {wer:.2f} | CER: {cer:.2f}"
+                )
+                if cfg.wandb.enabled:
+                    wandb.log({
+                        "eval/loss": eval_loss,
+                        "eval/wer": wer,
+                        "eval/cer": cer
+                    })
 
-            
             # reset batch timer
             batch_start_time = time.monotonic()
         
@@ -183,12 +215,40 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
+        # end of epoch evaluation
+        eval_loss = calculate_eval_loss(
+            model=model,
+            test_dataset=test_dataset,
+            tokenizer=model.tokenizer,
+            logger=logger,
+            n_samples=None,
+            batch_size=cfg.eval.batch_size
+        )
+        wer, cer = run_evaluation(
+            model=model,
+            test_dataset=test_dataset,
+            tokenizer=model.tokenizer,
+            logger=logger,
+            n_samples=None,
+            config=cfg,
+            batch_size=cfg.eval.batch_size
+        )
+        
         logger.info(
             f"Epoch {epoch+1} Summary | "
-            f"Average Loss: {avg_loss:.4f} | "
+            f"Average Train Loss: {avg_loss:.4f} | "
+            f"Eval Loss: {eval_loss:.4f} | "
+            f"WER: {wer:.2f} | CER: {cer:.2f} | "
             f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
+        if cfg.wandb.enabled:
+            wandb.log({
+                "train/epoch_loss": avg_loss,
+                "eval/epoch_loss": eval_loss,
+                "eval/epoch_wer": wer,
+                "eval/epoch_cer": cer
+            })
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):

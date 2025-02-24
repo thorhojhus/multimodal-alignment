@@ -1,0 +1,24 @@
+\subsection{Statistics}
+
+In order to evaluate the performance of the alignment models we set up, we are going to perform a few statistical tests. The purpose of the tests is to verify if there is a statistically significant improvement to be found using our approach to help align our models for native languages.
+
+The choice of statistical test is very important, because it has implications about how the results are interpreted and how accurate they are. Many statistical models are either \textit{parametric} or \textit{non-parametric}; i.e., they either assume that the model or data has a underlying distribution it follows, or they do not. In any case, the choice is very dependent on the kind of data one wishes to perform the test on. The choice of test can also change if you are comparing two or more groups, or if you are comparing a group to a known value. Likewise, if the data is dependent or independent can also dictate which kind of test one has to employ.\cite{STATS}
+
+As is for most automatic speech recognition models, the data we wish to compare is how well it transcribes the audio. There are several indicators for this, but we are going to focus on the Word Error Rate (WER) and Character Error Rate (CER). 
+
+\begin{equation}
+    WER = \frac{S + D + I}{N}
+    \label{eq:wer}
+\end{equation}
+
+\begin{equation}
+    CER = \frac{S + D + I}{N}
+    \label{eq:cer}
+\end{equation}
+
+In both equations \ref{eq:wer} and \ref{eq:cer}, $S$ is the number of substitutions, $D$ is the number of deletions, $I$ is the number of insertions, and $N$ is the total number of words or characters in the \textit{reference} text. The WER and CER are calculated by dividing the sum of the substitutions, deletions, and insertions by the total number of words or characters in the reference text. The lower the WER and CER, the better the model is at transcribing the audio. The WER and CER are by no means the perfect metrics, but they are common metrics used in the field of automatic speech recognition. They are also easy to calculate and understand, which is why we have chosen to use them in our evaluation as well.
+
+\subsubsection{Wilcoxon Signed Rank Test}
+The wilcoxon signed rank test is a non-parametric \textit{rank} test, and is used to compare the difference between two paired groups $\pmb{X}$ and $\pmb{Y}$. It is non-parametric in the sense that it does not assume what the underlying distribution is (which is usually a normal distribution) but instead assume that it is a \textit{symmetric} distribution around a central value. The distribution in question is around the difference between two samples $\pmb{Z} = \pmb{X} - \pmb{Y}$
+
+The test is performed by first calculating the difference between the two samples, $|\pmb{Z}|$, then ranking the absolute values of the differences with $R_1$ being the smallest observation with a value of 1, $R_2$ with a value of 2 and so on. The ranks are then summed for the positive and negative differences separately; if we assume $\textrm{SGN}(\pmb{Z}_i)$ returns the sign of the function, it is calculated by $\sum_{i=1}^N\textrm{SGN}(\pmb{Z}_i)\cdot R_i = T$ which will be our test statistic.
