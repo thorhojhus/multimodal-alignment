@@ -208,6 +208,12 @@ def run_evaluation(
 
     logger.info("\nCalculating metrics...")
     wer, cer = calculate_metrics(all_generated, all_ground_truths)
+    i = 0
+    for gen, gt in zip(all_generated, all_ground_truths):
+        print(f"Generated: {gen.strip()}\nGround Truth: {gt.strip()}\n")
+        i += 1
+        if i == 10:
+            break
     
     logger.info(f"\nResults over {len(all_generated)} samples:")
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
@@ -216,7 +222,7 @@ def run_evaluation(
     if config.wandb.enabled:
             eval_table = wandb.Table(columns=["Generated", "Ground Truth"])
             for gen, gt in zip(all_generated, all_ground_truths):
-                eval_table.add_data(gen, gt)
+                eval_table.add_data(gen.strip(), gt.strip())
             wandb.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()

@@ -49,7 +49,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         dataset=cfg.dataset.name,
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
-        processor=processor
+        processor=processor,
+        tiny_align_flag=cfg.model.tiny_align
     )
     
     test_dataset = AudioChatDataset(
@@ -58,6 +59,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         split="test.clean",
         tokenizer=model.tokenizer,
         processor=processor,
+        tiny_align_flag=False
     )
     
     print_parameter_count(model, logger)
@@ -71,7 +73,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, tiny_align=cfg.model.tiny_align), 
         shuffle=True,
         num_workers=8,
         prefetch_factor=2,
@@ -229,7 +231,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             test_dataset=test_dataset,
             tokenizer=model.tokenizer,
             logger=logger,
-            n_samples=None,
+            n_samples=None if cfg.eval.full_eval else cfg.eval.n_samples,
             config=cfg,
             batch_size=cfg.eval.batch_size
         )

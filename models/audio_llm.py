@@ -21,6 +21,8 @@ class AudioLLMModel(nn.Module):
         self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         if self.config.model.audio_tokenizer:
             self.projector = self._create_audio_tokenizer()
+        if self.config.model.tiny_align:
+            self.projector = self._create_tiny_align()
         else:
             self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
@@ -41,6 +43,18 @@ class AudioLLMModel(nn.Module):
                                      embed_dim=embed_dim, 
                                      hidden_stride=self.config.model.downsample_factor,
                                      d_model=whisper_dim)
+    
+    def _create_tiny_align(self):
+        from models.tiny_align import BridgeFormer
+
+        whisper_dim = self.audio_encoder.get_proj_dim()
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        hidden_dim = 256
+        num_heads = 4
+        num_layers = 4
+        self.token_size = 50
+        
+        return BridgeFormer(input_dim=whisper_dim, hidden_dim=hidden_dim, output_dim=embed_dim, num_heads=num_heads, num_layers=num_layers, token_size=self.token_size).to("cuda", torch.bfloat16)
 
 
     def _create_lm(self) -> nn.Module:
@@ -165,6 +179,15 @@ class AudioLLMModel(nn.Module):
         audio_embeds = self._process_audio_features(audio_features)
 
         text_embeds = self.lm.get_input_embeddings()(input_ids)
+        
+        if self.config.model.tiny_align:
+            audio_embeds = audio_embeds[:,:self.token_size]
+            text_embeds = text_embeds[:,:self.token_size]
+            if text_embeds.size(1) != self.token_size:
+                pad_size = self.token_size - text_embeds.size(1)
+                text_embeds = F.pad(text_embeds, (0, 0, 0, pad_size), "constant", 0)
+            loss = F.mse_loss(audio_embeds, text_embeds) + (1 - F.cosine_similarity(audio_embeds, text_embeds, dim=2).mean())
+            return SimpleNamespace(loss=loss)
         
         # combine embeddings and get padded sequences
         combined_lists = self._combine_embeddings(

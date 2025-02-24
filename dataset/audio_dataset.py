@@ -12,9 +12,12 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  lm_model: str="HuggingFaceTB/SmolLM2-360M-Instruct",
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
-                 processor=None):
+                 processor=None,
+                 tiny_align_flag=False):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
         self.dataset_name = dataset
+        self.tiny_align = tiny_align_flag
+        
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -115,6 +118,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
             add_generation_prompt=False,
             return_tensors="pt"
         )[0]
+
+        if self.tiny_align:
+            tokenized = self.tokenizer.encode(text, return_tensors="pt", add_special_tokens=False)[0]
         
         tokenized_alt = self.tokenizer.apply_chat_template(
             conversation_alt,
@@ -129,12 +135,15 @@ class AudioChatDataset(torch.utils.data.Dataset):
             return_tensors="pt"
         )[0]
         
+        
         # Label such that only assistance part is considering doing the model pass
         labels = torch.full(tokenized.size(), fill_value=-100)
-        labels[-len(assistant_response):] = assistant_response
+        if not self.tiny_align:
+            labels[-len(assistant_response):] = assistant_response
 
         alt_labels = torch.full(tokenized_alt.size(), fill_value=-100)
-        alt_labels[-len(assistant_response):] = assistant_response
+        if not self.tiny_align:
+            alt_labels[-len(assistant_response):] = assistant_response
         
         return {
             "input_ids": tokenized,
@@ -193,7 +202,7 @@ def prepare_inputs(
     return new_input_ids, new_attention_mask, new_labels, insertion_indices
 
 
-def collate_fn(batch, tokenizer):
+def collate_fn(batch, tokenizer, tiny_align=False):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
@@ -252,10 +261,16 @@ def collate_fn(batch, tokenizer):
     else:
         # for spectrogram-based models (Whisper, CLAP)
         audio_features = torch.stack(audio_features)
-
-    prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
-        input_ids, labels, tokenizer
-    )
+    
+    if not tiny_align:
+        prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
+            input_ids, labels, tokenizer
+        )
+    else:
+        prepared_input_ids = input_ids
+        prepared_attention_mask = torch.ones_like(input_ids)
+        prepared_labels = labels
+        prepared_insertion_indices = [torch.tensor([], dtype=torch.long)] * len(input_ids)
     
     return {
         "input_ids": prepared_input_ids,

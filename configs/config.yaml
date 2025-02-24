@@ -12,6 +12,7 @@ model:
   encoder_model_name: "openai/whisper-base"
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
+  tiny_align: false
 
 training:
   num_epochs: 3
@@ -30,6 +31,7 @@ training:
 eval:
   n_samples: 128
   batch_size: 32
+  full_eval: true
 
 
 dataset:
