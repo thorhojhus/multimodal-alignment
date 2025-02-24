@@ -69,15 +69,15 @@ class BridgeFormer(nn.Module):
 
     def forward(self, audio_features: Tensor) -> Tensor:
         # Input projection: [batch, seq_len, D_a] -> [batch, seq_len, H]
-        features = self.input_mlp(audio_features)
+        features: Tensor = self.input_mlp(audio_features)
         
         # Transformer encoding: [batch, seq_len, H] -> [batch, seq_len, H]
-        features = self.transformer_encoder(features)
+        features: Tensor = self.transformer_encoder(features)
         
         # Adaptive pooling: [batch, seq_len, H] -> [batch, T, H]
-        features = features.permute(0, 2, 1)  # [batch, H, seq_len]
-        features = self.adaptive_pooling(features)  # [batch, H, T]
-        features = features.permute(0, 2, 1)  # [batch, T, H]
+        features: Tensor = features.permute(0, 2, 1)  # [batch, H, seq_len]
+        features: Tensor = self.adaptive_pooling(features)  # [batch, H, T]
+        features: Tensor = features.permute(0, 2, 1)  # [batch, T, H]
         
         # Output projection: [batch, T, H] -> [batch, T, D_l]
         features = self.output_mlp(features)
