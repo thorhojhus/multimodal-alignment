@@ -11,21 +11,21 @@ Inspired by the paper https://arxiv.org/html/2411.13766v1 which introduces the T
 
 class MLP(nn.Module):
     """Multi-layer perceptron with RMS normalization and GELU activation."""
-    def __init__(self, input_dim: int, output_dim: int):
+    def __init__(self, input_dim: int, output_dim: int, act, hidden: int = 256):
         super().__init__()
         # Group normalization layers
         self.norms = nn.ModuleList([
-            RMSNorm(output_dim) for _ in range(3)
+            RMSNorm(hidden),
+            RMSNorm(output_dim),
         ])
         
         # Group linear layers
         self.linears = nn.ModuleList([
-            nn.Linear(input_dim, output_dim, bias=False),
-            nn.Linear(output_dim, output_dim, bias=False),
-            nn.Linear(output_dim, output_dim, bias=False)
+            nn.Linear(input_dim, hidden, bias=False),
+            nn.Linear(hidden, output_dim, bias=False)
         ])
-        
-        self.act = nn.GELU()
+
+        self.act = act
 
     def forward(self, x: Tensor) -> Tensor:
         for linear, norm in zip(self.linears, self.norms):
@@ -48,9 +48,12 @@ class BridgeFormer(nn.Module):
 
     def __init__(self, D_a: int, T: int, D_l: int, H: int = 256, M: int = 4, E: int = 4):
         super().__init__()
-        
+
+        # GeLU
+        self.GELU = nn.GELU()
+
         # Input projection
-        self.input_mlp = MLP(D_a, H)
+        self.input_mlp = MLP(D_a, H, act=self.GELU)
         
         # Transformer encoder setup
         encoder_layer = nn.TransformerEncoderLayer(
@@ -62,8 +65,10 @@ class BridgeFormer(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=E)
         
         # Pooling and output projection
+        self.conv = nn.Conv1d(in_channels=H, out_channels=H, kernel_size=3, padding=1)
         self.adaptive_pooling = nn.AdaptiveAvgPool1d(output_size=T)
-        self.output_mlp = MLP(H, D_l)
+
+        self.output_mlp = MLP(H, D_l, act=self.GELU)
         
         self._dimensions = {'D_a': D_a, 'T': T, 'D_l': D_l, 'H': H}
 
@@ -74,8 +79,10 @@ class BridgeFormer(nn.Module):
         # Transformer encoding: [batch, seq_len, H] -> [batch, seq_len, H]
         features: Tensor = self.transformer_encoder(features)
         
-        # Adaptive pooling: [batch, seq_len, H] -> [batch, T, H]
+        # Conv1D, GeLU, Adaptive pooling: [batch, seq_len, H] -> [batch, T, H]
         features: Tensor = features.permute(0, 2, 1)  # [batch, H, seq_len]
+        features: Tensor = self.conv(features)
+        features: Tensor = self.GELU(features)
         features: Tensor = self.adaptive_pooling(features)  # [batch, H, T]
         features: Tensor = features.permute(0, 2, 1)  # [batch, T, H]
         

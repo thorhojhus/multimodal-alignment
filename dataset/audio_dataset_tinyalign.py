@@ -30,7 +30,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.T = T
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
-        print(self.processor.__class__.__name__)
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
 
