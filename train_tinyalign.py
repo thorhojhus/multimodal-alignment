@@ -51,7 +51,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
         processor=processor,
-        T=150
     )
     
     test_dataset = AudioChatDataset(

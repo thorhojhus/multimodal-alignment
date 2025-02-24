@@ -94,10 +94,12 @@ def collate_fn(batch, T: int):
     for item in batch:
         # pad input_ids and labels
         if len(item["input_ids"]) > T:
-            item["input_ids"] = item["input_ids"][:T] # truncate as described in TinyAlign
+            ids = item["input_ids"][:T] # truncate as described in TinyAlign
         else:
             pad_len = T - len(item["input_ids"])      # or pad as described in TinyAlign
-            input_ids.append(torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=pad_token_id))
+            ids = torch.nn.functional.pad(item["input_ids"], (0, pad_len), value=pad_token_id)
+        
+        input_ids.append(ids)
         audio_features.append(item["audio_features"])
 
     input_ids = torch.stack(input_ids)

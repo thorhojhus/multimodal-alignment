@@ -64,7 +64,7 @@ class AudioLLMModel(nn.Module):
         encoder_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         if type == "tinyalign":
-            return BridgeFormer(D_a=encoder_dim, T=150, D_l=embed_dim).to("cuda", torch.bfloat16)
+            return BridgeFormer(D_a=encoder_dim, T=30, D_l=embed_dim).to("cuda", torch.bfloat16)
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
