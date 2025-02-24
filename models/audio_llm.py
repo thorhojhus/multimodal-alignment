@@ -33,7 +33,7 @@ class AudioLLMModel(nn.Module):
         self.alpha = 1.0
         self.beta = 1.0
         self.MSELoss = nn.MSELoss()
-        self.CosSim = nn.CosineSimilarity()
+        self.CosSim = nn.CosineSimilarity(dim=-1)
 
 
     def _create_lm(self) -> nn.Module:
@@ -43,7 +43,7 @@ class AudioLLMModel(nn.Module):
             bnb_4bit_quant_type="nf4", 
             bnb_4bit_use_double_quant=True, 
             bnb_4bit_compute_dtype=torch.bfloat16
-        )
+        ) if self.config.model.load_in_4bit else None
 
         # initialize language model with flash attention
         lm = AutoLigerKernelForCausalLM.from_pretrained(
@@ -51,7 +51,7 @@ class AudioLLMModel(nn.Module):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
-            quantization_config=quantization_config if self.config.model.load_in_4bit else None
+            quantization_config=quantization_config
         )
 
         # freeze lm parameters

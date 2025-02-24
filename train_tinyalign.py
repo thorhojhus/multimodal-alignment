@@ -33,7 +33,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, cfg: DictConfig) -> None:
+def train(model: AudioLLMModel, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -120,7 +120,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             # "forward" pass
             text_embeddings = model.lm.get_input_embeddings()(input_ids)
             audio_embeddings = model._process_audio_features(audio_features)
-            loss = model.bridgeformer_loss(audio_embeddings.flatten(start_dim=1), text_embeddings.flatten(start_dim=1))
+            loss = model.bridgeformer_loss(audio_embeddings, text_embeddings)
             # backward pass
             loss.backward()
             

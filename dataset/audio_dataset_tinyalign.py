@@ -4,9 +4,7 @@ from transformers import AutoProcessor, AutoTokenizer
 from transformers import BatchFeature
 
 """
-
-A TinyAlign specific Dataset Class. Implements the neccesary preprocessing steps required for TinyAlign Bridgeformer.
-
+A TinyAlign specific Dataset Class. Implements the neccesary preprocessing steps required for TinyAlign Bridgeformer & EmbedLink to perform.
 """
 
 class AudioChatDataset(torch.utils.data.Dataset):

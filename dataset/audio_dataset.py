@@ -94,7 +94,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             ]
         else:
             return [
-                {"role": "user", "content": f"Repeat the following text: {audio}"},
+                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
                 {"role": "assistant", "content": example}
             ]
         

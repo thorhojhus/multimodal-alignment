@@ -7,7 +7,7 @@
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 04:00
+#BSUB -W 01:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train_tinyalign.py model.lm_model_name=google/gemma-2-2b-it training.batch_size=16 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
+python train_tinyalign.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-large-v3-turbo training.batch_size=16 dataset.name=coral model.load_in_4bit=true wandb.enabled=true
 #python train.py
