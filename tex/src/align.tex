@@ -1,0 +1,10 @@
+\subsection{TinyAlign - Transformer Based Projector}
+
+
+\cite{qin_tiny-align_2024}
+
+Input audio features of shape $[B, N, D_a]$ where $D_a$ is the audio feature dimension size
+After first MLP: $[B, N, H]$ where $H$ is the hidden size of the MLP
+After transformer encoder: $[B, N, H]$ maintains sequence dimensions but applies attention mechanism
+After pooling: $[B, T, H]$ where T is the token length
+After final MLP: $[B, T, D_l]$ where $D_l$ is the label dimension size
