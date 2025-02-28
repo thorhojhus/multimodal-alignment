@@ -17,10 +17,8 @@
 #BSUB -N
 ### -- Specify the output and error file. %J is the job-id --
 ### -- -o and -e mean append, -oo and -eo mean overwrite --
-#BSUB -o /work3/s224233/shared/multimodal-alignment/job_outs/gpu-%J.out
-#BSUB -oo latest_gemma_audio_tokenizer.out
-#BSUB -e /work3/s224233/shared/multimodal-alignment/job_outs/gpu_%J.err
-#BSUB -eo latest_gemma_audio_tokenizer.err
+#BSUB -oo latest_gemma_audio_tokenizer_hviske.out
+#BSUB -eo latest_gemma_audio_tokenizer_hviske.err
 # -- end of LSF options --
 
 nvidia-smi

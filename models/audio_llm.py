@@ -221,7 +221,6 @@ class AudioLLMModel(nn.Module):
         generation_config = {
             "max_new_tokens": max_new_tokens,
             "pad_token_id": self.pad_token_id,
-            "stop_strings": ["\n"],
             **generation_kwargs
         }
         # generate text completions
