@@ -97,7 +97,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     if cfg.training.resume_from_checkpoint:
         global_step, _ = load_checkpoint(
             [model.projector], optimizer, scheduler,
-            cfg.training.resume_checkpoint_path, logger
+            cfg.training.resume_checkpoint_path, logger,
+            load_lr_from_checkpoint=cfg.training.load_lr_from_checkpoint
         )
         logger.info(f"Resuming training from step {global_step}")
     

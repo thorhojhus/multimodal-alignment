@@ -53,14 +53,21 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     checkpoint_path: str,
-    logger: logging.Logger
+    logger: logging.Logger,
+    load_lr_from_checkpoint: bool = True
 ) -> tuple:
     logger.info(f"Loading checkpoint from {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path)
     for model in models:
         model.load_state_dict(checkpoint[model._get_name()])
     optimizer.load_state_dict(checkpoint['optimizer_state'])
-    scheduler.load_state_dict(checkpoint['scheduler_state'])
+    
+    if load_lr_from_checkpoint:
+        logger.info("Loading learning rate schedule from checkpoint")
+        scheduler.load_state_dict(checkpoint['scheduler_state'])
+    else:
+        logger.info("Skipping learning rate schedule loading from checkpoint")
+    
     return checkpoint['global_step'], checkpoint['loss']
 
 def get_user_prompts_batch(ids_batch, model_name: str, tokenizer) -> Tuple[torch.Tensor, torch.Tensor]:
