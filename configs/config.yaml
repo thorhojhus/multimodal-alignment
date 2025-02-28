@@ -10,7 +10,7 @@ model:
   lm_model_name: "google/gemma-2-2b-it"
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
-  projector: "tinyalign"
+  projector: "simple"
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
 
