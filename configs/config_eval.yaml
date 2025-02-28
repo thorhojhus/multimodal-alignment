@@ -4,6 +4,7 @@ hydra:
 
 model:
   third_party_model_id: "openai/whisper-large-v3-turbo"
+  projector: "simple"
 
 dataset:
   name: "librispeech"
