@@ -17,9 +17,12 @@ class AudioLLMModel(nn.Module):
         super().__init__()
         self.config = config
         # create model components
-        self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         self.lm = self._create_lm()
-        self.projector = self._create_projector()
+        self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
+        if self.config.model.audio_tokenizer:
+            self.projector = self._create_audio_tokenizer()
+        else:
+            self.projector = self._create_projector()
         self.tokenizer = self._setup_tokenizer()
         # setup special tokens
         self.audio_token_str = "<|audio|>"
@@ -28,6 +31,16 @@ class AudioLLMModel(nn.Module):
         if self.tokenizer.pad_token == self.tokenizer.eos_token:
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
+
+
+    def _create_audio_tokenizer(self):
+        from models.audio_tokenizer import AudioTokenizer
+        whisper_dim = self.audio_encoder.get_proj_dim()
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return AudioTokenizer(vocab_size=self.config.model.audio_tokenizer_vocab_size, 
+                                     embed_dim=embed_dim, 
+                                     hidden_stride=self.config.model.downsample_factor,
+                                     d_model=whisper_dim)
 
 
     def _create_lm(self) -> nn.Module:
@@ -71,10 +84,7 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            if isinstance(audio_features, dict):
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            else:
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
     
@@ -150,9 +160,10 @@ class AudioLLMModel(nn.Module):
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
         alt_labels: Optional[Tensor] = None, **kwargs
     ) -> Any:
-                
+        
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
+
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
@@ -182,6 +193,7 @@ class AudioLLMModel(nn.Module):
         max_new_tokens: int = 100,
         **generation_kwargs: Any
     ) -> Tensor:
+        
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
         text_embeds = self.lm.get_input_embeddings()(input_ids)
@@ -238,7 +250,7 @@ if __name__ == "__main__":
     T = 1024
     config = SimpleNamespace(
         model=SimpleNamespace(
-            whisper_model_name="openai/whisper-base",
+            encoder_model_name="openai/whisper-base",
             lm_model_name="HuggingFaceTB/SmolLM2-360M-Instruct",
             downsample_factor=10
         ),

@@ -61,7 +61,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     )
     
     print_parameter_count(model, logger)
-        
+    
     trainable_params = [
         {"params": list(model.projector.parameters())},
     ]
@@ -129,7 +129,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 alt_input_ids=alt_input_ids,
                 alt_labels=alt_labels,
                 attention_mask=attention_mask,
-                insertion_indices=insertion_indices
+                insertion_indices=insertion_indices,
             )
 
             # backward pass

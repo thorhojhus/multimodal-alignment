@@ -14,6 +14,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  tokenizer=None, 
                  processor=None):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
+        self.dataset_name = dataset
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
             self.dataset = coral_dataset_dict[split.split(".")[0]]
@@ -45,9 +46,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             print("Custom chat template not found")
             pass
 
-    def _audio_to_features(self, audio):
-        audio_array = torch.tensor(audio["array"], dtype=torch.float32)
-        audio_sampling_rate = audio["sampling_rate"]
+    def _audio_to_features(self, audio_array, audio_sampling_rate):
+        
         if "SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__:
             target_sampling_rate = 16000
         else:
@@ -102,8 +102,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
         example = self.dataset[idx]
         audio = example["audio"]
         text = example["text"].lower()
-        audio_features = self._audio_to_features(audio)
-
+        audio_array = torch.tensor(audio["array"], dtype=torch.float32)
+        audio_sampling_rate = audio["sampling_rate"]
+        audio_features = self._audio_to_features(audio_array, audio_sampling_rate)
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
         conversation_alt = self._format_chat(text, text)
