@@ -93,11 +93,11 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # load checkpoint if specified
     global_step = 0
     if cfg.training.resume_from_checkpoint:
-        global_step, _ = load_checkpoint(
+        global_step_loaded, _ = load_checkpoint(
             [model.projector], optimizer, scheduler,
             cfg.training.resume_checkpoint_path, logger
         )
-        logger.info(f"Resuming training from step {global_step}")
+        logger.info(f"Resuming training from step {global_step_loaded}")
     
     for epoch in range(cfg.training.num_epochs):
         model.train()

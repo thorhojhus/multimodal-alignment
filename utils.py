@@ -52,8 +52,8 @@ def load_checkpoint(
     checkpoint = torch.load(checkpoint_path)
     for model in models:
         model.load_state_dict(checkpoint[model._get_name()])
-    optimizer.load_state_dict(checkpoint['optimizer_state'])
-    scheduler.load_state_dict(checkpoint['scheduler_state'])
+    #optimizer.load_state_dict(checkpoint['optimizer_state'])
+    #scheduler.load_state_dict(checkpoint['scheduler_state'])
     return checkpoint['global_step'], checkpoint['loss']
 
 def get_user_prompts_batch(ids_batch, model_name: str, tokenizer) -> Tuple[torch.Tensor, torch.Tensor]:

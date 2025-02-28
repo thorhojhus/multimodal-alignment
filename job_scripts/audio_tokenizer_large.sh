@@ -3,12 +3,12 @@
 #BSUB -q gpua100
 #BSUB -R "select[gpu80gb]"
 ### Name
-#BSUB -J 9b_tokenize
+#BSUB -J 9b_tokenize_hviske
 ### Num cores
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 08:00
+#BSUB -W 05:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
@@ -32,4 +32,4 @@ cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 
 
-python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=openai/whisper-large-v3 training.batch_size=32 eval.batch_size=32 dataset.name=coral model.load_in_4bit=true model.audio_tokenizer=true training.kl_loss=false wandb.enabled=true
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=32 eval.batch_size=32 dataset.name=coral model.load_in_4bit=true model.audio_tokenizer=true training.kl_loss=false wandb.enabled=true training.num_epochs=1 training.resume_from_checkpoint=true training.resume_checkpoint_path=/work3/s224233/shared/multimodal-alignment/outputs/2025-02-26/23-16-50/checkpoints/checkpoint_latest.pt
