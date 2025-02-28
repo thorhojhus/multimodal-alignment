@@ -18,7 +18,8 @@ from utils import (
     print_parameter_count,
     run_evaluation,
     save_checkpoint,
-    calculate_eval_loss
+    calculate_eval_loss,
+    run_evaluation_with_loss
 )
 
 # set up a module-level logger
@@ -36,6 +37,9 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    # initialize best evaluation loss for checkpoint saving
+    best_eval_loss = float('inf')
 
     # create dataset and processor
     if "w2v-bert" in cfg.model.encoder_model_name:
@@ -162,13 +166,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
                     })
             
-            # save checkpoint if needed
-            if global_step % cfg.training.save_every_n_steps == 0:
-                save_checkpoint(
-                    [model.projector], optimizer, scheduler,
-                    global_step, loss.item(), 
-                    cfg.training.checkpoint_dir, logger
-                )
 
             # run evaluation and loss calculation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
@@ -216,24 +213,28 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         avg_batch_time = epoch_time / len(dataloader)
         
         # end of epoch evaluation
-        eval_loss = calculate_eval_loss(
-            model=model,
-            test_dataset=test_dataset,
-            tokenizer=model.tokenizer,
-            logger=logger,
-            n_samples=None,
-            batch_size=cfg.eval.batch_size
-        )
-        wer, cer = run_evaluation(
-            model=model,
-            test_dataset=test_dataset,
-            tokenizer=model.tokenizer,
-            logger=logger,
-            n_samples=None,
-            config=cfg,
-            batch_size=cfg.eval.batch_size
+        logger.info("\nRunning end of epoch evaluation")
+        eval_loss, wer, cer = run_evaluation_with_loss(
+            model=model, 
+            test_dataset=test_dataset, 
+            tokenizer=model.tokenizer, 
+            logger=logger, 
+            n_samples=None, 
+            config=cfg
         )
         
+        # save checkpoint at end of epoch (always latest, and best if applicable)
+        is_best = False
+        if epoch == 0 or eval_loss < best_eval_loss:
+            best_eval_loss = eval_loss
+            is_best = True
+            
+        save_checkpoint(
+            [model.projector], optimizer, scheduler,
+            global_step, eval_loss, 
+            cfg.training.checkpoint_dir, logger, is_best
+        )
+            
         logger.info(
             f"Epoch {epoch+1} Summary | "
             f"Average Train Loss: {avg_loss:.4f} | "

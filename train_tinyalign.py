@@ -20,6 +20,7 @@ from utils import (
     print_parameter_count,
     run_evaluation,
     save_checkpoint,
+    run_evaluation_with_loss,
 )
 
 # set up a module-level logger
@@ -37,6 +38,9 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize best evaluation loss for checkpoint saving
+    best_eval_loss = float('inf')
 
     # create dataset and processor
     if "w2v-bert" in cfg.model.encoder_model_name:
@@ -150,13 +154,7 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
                     })
             
-            # Save checkpoint if needed
-            if global_step % cfg.training.save_every_n_steps == 0:
-                save_checkpoint(
-                    [model.projector], optimizer, scheduler,
-                    global_step, loss.item(), 
-                    cfg.training.checkpoint_dir, logger
-                )
+            # We no longer save checkpoints during steps, only at end of epoch
                 
             # Run evaluation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
@@ -172,12 +170,44 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
         epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
+        # Run end of epoch evaluation
+        logger.info("\nRunning end of epoch evaluation")
+        eval_loss, wer, cer = run_evaluation_with_loss(
+            model=model, 
+            test_dataset=test_dataset, 
+            tokenizer=model.tokenizer, 
+            logger=logger, 
+            n_samples=None, 
+            config=cfg
+        )
+        
+        # Save checkpoint at end of epoch (always latest, and best if applicable)
+        is_best = False
+        if epoch == 0 or eval_loss < best_eval_loss:
+            best_eval_loss = eval_loss
+            is_best = True
+            
+        save_checkpoint(
+            [model.projector], optimizer, scheduler,
+            global_step, eval_loss, 
+            cfg.training.checkpoint_dir, logger, is_best
+        )
+        
         logger.info(
             f"Epoch {epoch+1} Summary | "
-            f"Average Loss: {avg_loss:.4f} | "
+            f"Average Train Loss: {avg_loss:.4f} | "
+            f"Eval Loss: {eval_loss:.4f} | "
+            f"WER: {wer:.2f} | CER: {cer:.2f} | "
             f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
+        if cfg.wandb.enabled:
+            wandb.log({
+                "train/epoch_loss": avg_loss,
+                "eval/epoch_loss": eval_loss,
+                "eval/epoch_wer": wer,
+                "eval/epoch_cer": cer
+            })
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):

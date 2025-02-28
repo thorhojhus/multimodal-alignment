@@ -26,7 +26,8 @@ def save_checkpoint(
     global_step: int,
     loss: float,
     save_dir: str,
-    logger: logging.Logger
+    logger: logging.Logger,
+    is_best: bool = False
 ) -> None:
     checkpoint = {
         'global_step': global_step,
@@ -35,11 +36,17 @@ def save_checkpoint(
         'scheduler_state': scheduler.state_dict()
     }
     checkpoint |= {model._get_name(): model.state_dict() for model in models}
-    checkpoint_path = os.path.join(save_dir, f'checkpoint_step_{global_step}.pt')
-    torch.save(checkpoint, checkpoint_path)
-    logger.info(f"Saved checkpoint to {checkpoint_path}")
+    
+    # always save latest checkpoint
     latest_path = os.path.join(save_dir, 'checkpoint_latest.pt')
     torch.save(checkpoint, latest_path)
+    logger.info(f"Saved latest checkpoint at step {global_step}")
+    
+    # save best checkpoint if specified
+    if is_best:
+        best_path = os.path.join(save_dir, 'checkpoint_best.pt')
+        torch.save(checkpoint, best_path)
+        logger.info(f"Saved best checkpoint at step {global_step} with loss {loss:.4f}")
 
 def load_checkpoint(
     models: list[torch.nn.Module],
@@ -314,3 +321,47 @@ def calculate_eval_loss(
     torch.cuda.empty_cache()
     model.train()
     return avg_loss
+
+
+def run_evaluation_with_loss(
+    model: torch.nn.Module,
+    test_dataset: torch.utils.data.Dataset,
+    tokenizer,
+    logger: logging.Logger,
+    n_samples: int,
+    config
+) -> Tuple[float, float, float]:
+    """
+    Run both evaluation loss calculation and WER/CER metrics.
+    
+    Args:
+        model: The AudioLLM model to evaluate
+        test_dataset: Dataset to evaluate on
+        tokenizer: Model tokenizer
+        logger: Logger instance
+        n_samples: Number of samples to evaluate (if None, uses full dataset)
+        config: Model configuration
+    
+    Returns:
+        Tuple of (eval_loss, WER, CER) metrics
+    """
+    eval_loss = calculate_eval_loss(
+        model=model,
+        test_dataset=test_dataset,
+        tokenizer=tokenizer,
+        logger=logger,
+        n_samples=n_samples,
+        batch_size=config.eval.batch_size
+    )
+    
+    wer, cer = run_evaluation(
+        model=model,
+        test_dataset=test_dataset,
+        tokenizer=tokenizer,
+        logger=logger,
+        n_samples=n_samples,
+        config=config,
+        batch_size=config.eval.batch_size
+    )
+    
+    return eval_loss, wer, cer
