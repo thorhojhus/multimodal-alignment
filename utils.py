@@ -5,7 +5,6 @@ import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
 import jiwer
-from tqdm import tqdm
 import wandb
 from typing import Tuple, List
 
