@@ -4,6 +4,7 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
+from dataset.audio_dataset_tinyalign import collate_fn as collate_fn_tinyalign
 import jiwer
 import wandb
 from typing import Tuple, List
@@ -219,10 +220,10 @@ def run_evaluation(
         all_ground_truths.extend(ground_truths)
         samples_processed += len(generated_texts)
 
-    logger.info("\nCalculating metrics...")
+    logger.info("Calculating metrics...")
     wer, cer = calculate_metrics(all_generated, all_ground_truths)
     
-    logger.info(f"\nResults over {len(all_generated)} samples:")
+    logger.info(f"Results over {len(all_generated)} samples:")
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
     logger.info(f"Character Error Rate (CER): {cer:.4f}")
     
@@ -242,7 +243,8 @@ def calculate_eval_loss(
     tokenizer,
     logger: logging.Logger,
     n_samples: int = None,
-    batch_size: int = 32
+    batch_size: int = 32,
+    losstype: str = "normal"
 ) -> float:
     """
     Calculate average evaluation loss on test dataset.
@@ -271,8 +273,10 @@ def calculate_eval_loss(
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
-        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer),
-        shuffle=False 
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer) 
+                   if losstype == "normal"
+                   else functools.partial(collate_fn_tinyalign, T=test_dataset.T),
+        shuffle=False
     )
     
     total_loss = 0.0
@@ -293,24 +297,32 @@ def calculate_eval_loss(
                 }
             else:
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
-            labels = batch["labels"].to("cuda", non_blocking=True)
-            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
-            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
-            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
-            insertion_indices = batch["insertion_indices"]
+
+            if losstype == "normal":
+                labels = batch["labels"].to("cuda", non_blocking=True)
+                alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+                alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+                attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+                insertion_indices = batch["insertion_indices"]
+
+                # forward pass
+                outputs = model(
+                    input_ids=input_ids,
+                    audio_features=audio_features,
+                    labels=labels,
+                    alt_input_ids=alt_input_ids,
+                    alt_labels=alt_labels,
+                    attention_mask=attention_mask,
+                    insertion_indices=insertion_indices
+                )
+                loss = outputs.loss
+
+            elif losstype == "tinyalign":
+                # "forward" pass
+                text_embeddings = model.lm.get_input_embeddings()(input_ids)
+                audio_embeddings = model._process_audio_features(audio_features)
+                loss = model.bridgeformer_loss(audio_embeddings, text_embeddings)
             
-            # forward pass
-            outputs = model(
-                input_ids=input_ids,
-                audio_features=audio_features,
-                labels=labels,
-                alt_input_ids=alt_input_ids,
-                alt_labels=alt_labels,
-                attention_mask=attention_mask,
-                insertion_indices=insertion_indices
-            )
-            
-            loss = outputs.loss
             total_loss += loss.item()
             num_batches += 1
             samples_processed += input_ids.size(0)
@@ -336,7 +348,8 @@ def run_evaluation_with_loss(
     tokenizer,
     logger: logging.Logger,
     n_samples: int,
-    config
+    config,
+    test_dataset_tinyalign: torch.utils.data.Dataset | None = None
 ) -> Tuple[float, float, float]:
     """
     Run both evaluation loss calculation and WER/CER metrics.
@@ -354,11 +367,12 @@ def run_evaluation_with_loss(
     """
     eval_loss = calculate_eval_loss(
         model=model,
-        test_dataset=test_dataset,
+        test_dataset=test_dataset_tinyalign or test_dataset,
         tokenizer=tokenizer,
         logger=logger,
         n_samples=n_samples,
-        batch_size=config.eval.batch_size
+        batch_size=config.eval.batch_size,
+        losstype="tinyalign" if test_dataset_tinyalign else "normal"
     )
     
     wer, cer = run_evaluation(

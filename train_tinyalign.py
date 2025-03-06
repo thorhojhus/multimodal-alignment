@@ -18,7 +18,6 @@ from models.audio_llm import AudioLLMModel
 from utils import (
     load_checkpoint,
     print_parameter_count,
-    run_evaluation,
     save_checkpoint,
     run_evaluation_with_loss,
 )
@@ -55,6 +54,14 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
         processor=processor,
+    )
+
+    test_dataset_tinyalign = TinyAlignDataset(
+        lm_model=cfg.model.lm_model_name,
+        dataset=cfg.dataset.name,
+        split="test.clean",
+        tokenizer=model.tokenizer,
+        processor=processor
     )
     
     test_dataset = AudioChatDataset(
@@ -159,10 +166,17 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
                 
             # Run evaluation if needed
             if global_step % cfg.training.evaluate_every_n_steps == 0:
-                logger.info("\nRunning evaluation at step %d", global_step)
-                run_evaluation(model, test_dataset, model.tokenizer, logger, cfg.eval.n_samples, cfg)
+                logger.info("Running evaluation at step %d", global_step)
+                eval_loss, wer, cer = run_evaluation_with_loss(
+                    model=model, 
+                    test_dataset=test_dataset, 
+                    tokenizer=model.tokenizer, 
+                    logger=logger, 
+                    n_samples=cfg.eval.n_samples, 
+                    config=cfg,
+                    test_dataset_tinyalign=test_dataset_tinyalign
+                )
 
-            
             # reset batch timer
             batch_start_time = time.monotonic()
         
@@ -172,14 +186,15 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
         avg_batch_time = epoch_time / len(dataloader)
         
         # Run end of epoch evaluation
-        logger.info("\nRunning end of epoch evaluation")
+        logger.info("Running end of epoch evaluation")
         eval_loss, wer, cer = run_evaluation_with_loss(
             model=model, 
             test_dataset=test_dataset, 
             tokenizer=model.tokenizer, 
             logger=logger, 
             n_samples=None, 
-            config=cfg
+            config=cfg,
+            test_dataset_tinyalign=test_dataset_tinyalign
         )
         
         # Save checkpoint at end of epoch (always latest, and best if applicable)
