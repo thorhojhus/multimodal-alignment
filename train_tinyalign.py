@@ -177,6 +177,19 @@ def train(model: AudioLLMModel, cfg: DictConfig) -> None:
                     test_dataset_tinyalign=test_dataset_tinyalign
                 )
 
+                logger.info(
+                    f"Step {global_step} Evaluation | "
+                    f"Eval Loss: {eval_loss:.4f} | "
+                    f"WER: {wer:.2f} | CER: {cer:.2f}"
+                )
+                if cfg.wandb.enabled:
+                    wandb.log({
+                        "eval/loss": eval_loss,
+                        "eval/wer": wer,
+                        "eval/cer": cer
+                    }
+                )
+
             # reset batch timer
             batch_start_time = time.monotonic()
         
