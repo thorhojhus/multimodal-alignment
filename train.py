@@ -288,6 +288,9 @@ def main(cfg: DictConfig):
     if cfg.model.train_encoder:
         model.audio_encoder.audio_encoder = inject_adapter_in_model(lora_config, model.audio_encoder.audio_encoder)
 
+    if cfg.wandb.enabled:
+        setup_wandb(cfg)
+
     train(model, cfg)
 
 if __name__ == "__main__":
