@@ -19,7 +19,7 @@ def print_parameter_count(model: torch.nn.Module, logger: logging.Logger) -> Non
     logger.info(f"Trainable parameters: \t{trainable_params:,}")
     logger.info(f"Total parameters: \t{total_params:,}")
     logger.info(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
-    logger.info(summary(model))
+    summary(model)
 
 def save_checkpoint(
     models: list[torch.nn.Module],

@@ -11,6 +11,7 @@ model:
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
   projector: "simple"
+  token_length: 30
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
 
