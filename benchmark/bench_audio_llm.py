@@ -147,7 +147,7 @@ batch_size = 64
 test_loader = DataLoader(
     test_dataset,
     batch_size=batch_size,
-    collate_fn=functools.partial(collate_fn, tokenizer=tokenizer),
+    collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T),
     shuffle=False,
 )
 
