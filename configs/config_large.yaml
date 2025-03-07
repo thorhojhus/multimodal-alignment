@@ -4,6 +4,7 @@ hydra:
 
 wandb:
   enabled: true
+  name: "default"
 
 model:
   inter_dim: 4096

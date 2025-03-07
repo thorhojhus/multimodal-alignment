@@ -26,6 +26,7 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 def setup_wandb(runtime_config: DictConfig) -> None:
+
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
