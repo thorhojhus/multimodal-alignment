@@ -4,7 +4,7 @@ hydra:
 
 wandb:
   enabled: false
-  name: "default"
+  run_name: "default"
 
 model:
   downsample_factor: 10
@@ -14,6 +14,8 @@ model:
   projector: "simple"
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
+  train_llm: false
+  train_encoder: false
 
 training:
   num_epochs: 3

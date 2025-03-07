@@ -17,3 +17,4 @@ hydra-core
 wandb
 ipython
 jupyter
+peft
