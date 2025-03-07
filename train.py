@@ -75,7 +75,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
         shuffle=True,
         num_workers=8,
         prefetch_factor=2,
@@ -125,6 +125,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
+            text_ids = batch["text_ids"].to("cuda", non_blocking=True)
             
             # forward pass
             outputs = model(
@@ -135,6 +136,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 alt_labels=alt_labels,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
+                text_ids=text_ids
             )
 
             # backward pass
