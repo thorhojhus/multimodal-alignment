@@ -12,7 +12,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  lm_model: str="HuggingFaceTB/SmolLM2-360M-Instruct",
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
-                 processor=None):
+                 processor=None,
+                 T=30):
         self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
         self.dataset_name = dataset
         if dataset == "coral":
@@ -26,6 +27,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
         self.tokenizer = tokenizer
+        self.T = T # TinyAlign Tokenizer Cutoff/Pad to value.
         self._setup_chat_template()
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
@@ -141,6 +143,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "labels": labels,
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
+            "text_ids": torch.tensor(self.tokenizer.encode(text)),
         }
 
 
@@ -192,12 +195,13 @@ def prepare_inputs(
     return new_input_ids, new_attention_mask, new_labels, insertion_indices
 
 
-def collate_fn(batch, tokenizer):
+def collate_fn(batch, tokenizer, T):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
     pad_token_id = 0
     input_ids = []
+    text_ids = []
     labels = []
     audio_features = []
     alt_input_ids = []
@@ -215,6 +219,16 @@ def collate_fn(batch, tokenizer):
         alt_input_ids.append(torch.nn.functional.pad(item["alt_input_ids"], (0, alt_pad_len), value=pad_token_id))
         alt_labels.append(torch.nn.functional.pad(item["alt_labels"], (0, alt_pad_len), value=-100))
 
+        # pad/cutoff text_ids if using EmbedLoss:
+        if len(item["text_ids"]) > T:
+            ids = item["text_ids"][:T] # truncate as described in TinyAlign
+        else:
+            pad_len = T - len(item["text_ids"])      # or pad as described in TinyAlign
+            ids = torch.nn.functional.pad(item["text_ids"], (0, pad_len), value=pad_token_id)
+        
+        text_ids.append(ids)
+
+    text_ids = torch.stack(text_ids)
     input_ids = torch.stack(input_ids)
     labels = torch.stack(labels)
     alt_input_ids = torch.stack(alt_input_ids)
@@ -263,7 +277,8 @@ def collate_fn(batch, tokenizer):
         "attention_mask": prepared_attention_mask,
         "insertion_indices": prepared_insertion_indices,
         "alt_input_ids": alt_input_ids,
-        "alt_labels": alt_labels
+        "alt_labels": alt_labels,
+        "text_ids": text_ids
     }
 
 if __name__ == "__main__":
