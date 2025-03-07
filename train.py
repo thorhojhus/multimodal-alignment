@@ -27,11 +27,6 @@ logger = logging.getLogger(__name__)
 
 def setup_wandb(runtime_config: DictConfig) -> None:
 
-    if runtime_config.wandb.name == "default":
-        logger.info("Using default wandb name.")
-    else:
-        logger.info(f"Using custom wandb name: {runtime_config.wandb.name}")
-
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
