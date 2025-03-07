@@ -26,10 +26,18 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 def setup_wandb(runtime_config: DictConfig) -> None:
+
+    if runtime_config.wandb.name == "default":
+        logger.info("Using default wandb name.")
+    else:
+        logger.info(f"Using custom wandb name: {runtime_config.wandb.name}")
+
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}",
+        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
+             if runtime_config.wandb.name == "default"
+             else runtime_config.wandb.name,
         config=dict(runtime_config)
     )
 

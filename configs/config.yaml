@@ -4,6 +4,7 @@ hydra:
 
 wandb:
   enabled: false
+  name: "default"
 
 model:
   downsample_factor: 10
