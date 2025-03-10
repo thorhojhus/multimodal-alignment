@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-large-v3 training.batch_size=32 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=gemma-2b-whisper-lora-llm-train
+python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=openai/whisper-large-v3 training.batch_size=16 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=gemma-2b-whisper-lora-llm-train
 #python train.py
