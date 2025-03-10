@@ -10,7 +10,7 @@ import wandb
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
-
+from peft import inject_adapter_in_model, LoraConfig
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 from models.audio_llm import AudioLLMModel
 from utils import (
@@ -26,10 +26,13 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 def setup_wandb(runtime_config: DictConfig) -> None:
+
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment",
-        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}",
+        name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
+             if runtime_config.wandb.run_name == "default"
+             else runtime_config.wandb.run_name,
         config=dict(runtime_config)
     )
 
@@ -268,13 +271,29 @@ def main(cfg: DictConfig):
 
     model = AudioLLMModel(cfg)
 
-    # freeze non-trainable components
-    for param in model.lm.parameters():
-        param.requires_grad = False
+    lora_config = LoraConfig(
+        r=8,
+        lora_alpha=16,
+        target_modules="all-linear",
+        lora_dropout=0.1,
+        bias="none",
+        use_dora=True,
+        use_rslora=True,
+    )
+
+    if cfg.model.train_llm:
+        model.lm = inject_adapter_in_model(lora_config, model.lm)
+    else:
+        # freeze non-trainable components
+        for param in model.lm.parameters():
+            param.requires_grad = False    
+
+    if cfg.model.train_encoder:
+        model.audio_encoder.audio_encoder = inject_adapter_in_model(lora_config, model.audio_encoder.audio_encoder)
 
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-    
+
     train(model, cfg)
 
 if __name__ == "__main__":
