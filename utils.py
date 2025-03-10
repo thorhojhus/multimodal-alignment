@@ -2,7 +2,6 @@ import functools
 import logging
 import os
 import torch
-from torchinfo import summary
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
 import jiwer
@@ -19,7 +18,6 @@ def print_parameter_count(model: torch.nn.Module, logger: logging.Logger) -> Non
     logger.info(f"Trainable parameters: \t{trainable_params:,}")
     logger.info(f"Total parameters: \t{total_params:,}")
     logger.info(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
-    summary(model)
 
 def save_checkpoint(
     models: list[torch.nn.Module],
