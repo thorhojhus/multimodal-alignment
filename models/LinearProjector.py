@@ -3,13 +3,13 @@ import torch
 from torch import nn, Tensor
 
 class LinearProjector(nn.Module):
-    def __init__(self, encoder_dim: int, embed_dim: int, downsample_factor: int):
+    def __init__(self, encoder_dim: int, embed_dim: int, approx_target_length: int = 150):
         super().__init__()
-        self.downsample_factor = downsample_factor
+        self.downsample_factor = encoder_dim // approx_target_length
         # initial projection from encoder dimensions
         self.linear1 = nn.Linear(in_features=encoder_dim, out_features=embed_dim, bias=False)
         # combined downsampling and final projection
-        self.downsample_proj = nn.Linear(downsample_factor * embed_dim, embed_dim, bias=False)
+        self.downsample_proj = nn.Linear(self.downsample_factor * embed_dim, embed_dim, bias=False)
         
     def _pad_sequence(self, hidden_states: Tensor) -> Tuple[Tensor, int]:
         # pad if sequence length is not divisible by downsample_factor
