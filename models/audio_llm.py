@@ -92,10 +92,10 @@ class AudioLLMModel(nn.Module):
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
 
-    def bridgeformer_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
-        # Calculate loss for TinyAlign BridgeFormer
-        loss = self.alpha * self.MSELoss(audio_embeddings, text_embeddings) + self.beta * (1 - self.CosSim(audio_embeddings, text_embeddings)).mean()
-        return loss
+    def embed_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
+        # Calculate embedding loss for TinyAlign BridgeFormer (embed_loss)
+        embed_loss = self.alpha * self.MSELoss(audio_embeddings, text_embeddings) + self.beta * (1 - self.CosSim(audio_embeddings, text_embeddings)).mean()
+        return SimpleNamespace(loss=embed_loss)
 
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
@@ -174,9 +174,15 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, **kwargs
+        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, **kwargs
     ) -> Any:
         
+        # If embed_loss (TinyAlign) is used:
+        if self.config.training.loss=="embed_loss":
+            text_embeddings = self.lm.get_input_embeddings()(text_ids)
+            audio_embeddings = self._process_audio_features(audio_features)
+            return self.embed_loss(audio_embeddings, text_embeddings)
+
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
 
@@ -189,7 +195,7 @@ class AudioLLMModel(nn.Module):
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
 
         # calculate KL loss if specified
-        if self.config.training.kl_loss:
+        if self.config.training.loss == "kl_loss":
             lm_output = self.lm.forward(
                 inputs_embeds=combined_embeds,
                 attention_mask=combined_attention_mask,

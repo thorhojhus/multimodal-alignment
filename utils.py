@@ -4,7 +4,6 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
-from dataset.audio_dataset_tinyalign import collate_fn as collate_fn_tinyalign
 import jiwer
 import wandb
 from typing import Tuple, List
@@ -15,7 +14,7 @@ def count_trainable_parameters(model: torch.nn.Module) -> int:
 def print_parameter_count(model: torch.nn.Module, logger: logging.Logger) -> None:
     trainable_params = count_trainable_parameters(model)
     total_params = sum(p.numel() for p in model.parameters())
-    logger.info("\nModel Parameters:")
+    logger.info("Model Parameters:")
     logger.info(f"Trainable parameters: \t{trainable_params:,}")
     logger.info(f"Total parameters: \t{total_params:,}")
     logger.info(f"Percentage trainable: \t{100 * trainable_params / total_params:.2f}%\n")
@@ -193,7 +192,7 @@ def run_evaluation(
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
-        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer),
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T),
         shuffle=True
     )
     
@@ -244,7 +243,6 @@ def calculate_eval_loss(
     logger: logging.Logger,
     n_samples: int = None,
     batch_size: int = 32,
-    losstype: str = "normal"
 ) -> float:
     """
     Calculate average evaluation loss on test dataset.
@@ -273,9 +271,7 @@ def calculate_eval_loss(
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
-        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer) 
-                   if losstype == "normal"
-                   else functools.partial(collate_fn_tinyalign, T=test_dataset.T),
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T),
         shuffle=False
     )
     
@@ -298,30 +294,25 @@ def calculate_eval_loss(
             else:
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
 
-            if losstype == "normal":
-                labels = batch["labels"].to("cuda", non_blocking=True)
-                alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
-                alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
-                attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
-                insertion_indices = batch["insertion_indices"]
+            labels = batch["labels"].to("cuda", non_blocking=True)
+            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+            insertion_indices = batch["insertion_indices"]
+            text_ids = batch["text_ids"].to("cuda", non_blocking=True)
 
-                # forward pass
-                outputs = model(
-                    input_ids=input_ids,
-                    audio_features=audio_features,
-                    labels=labels,
-                    alt_input_ids=alt_input_ids,
-                    alt_labels=alt_labels,
-                    attention_mask=attention_mask,
-                    insertion_indices=insertion_indices
-                )
-                loss = outputs.loss
-
-            elif losstype == "tinyalign":
-                # "forward" pass
-                text_embeddings = model.lm.get_input_embeddings()(input_ids)
-                audio_embeddings = model._process_audio_features(audio_features)
-                loss = model.bridgeformer_loss(audio_embeddings, text_embeddings)
+            # forward pass
+            outputs = model(
+                input_ids=input_ids,
+                audio_features=audio_features,
+                labels=labels,
+                alt_input_ids=alt_input_ids,
+                alt_labels=alt_labels,
+                attention_mask=attention_mask,
+                insertion_indices=insertion_indices,
+                text_ids=text_ids
+            )
+            loss = outputs.loss
             
             total_loss += loss.item()
             num_batches += 1
@@ -367,12 +358,12 @@ def run_evaluation_with_loss(
     """
     eval_loss = calculate_eval_loss(
         model=model,
-        test_dataset=test_dataset_tinyalign or test_dataset,
+        test_dataset=test_dataset,
         tokenizer=tokenizer,
         logger=logger,
         n_samples=n_samples,
         batch_size=config.eval.batch_size,
-        losstype="tinyalign" if test_dataset_tinyalign else "normal"
+        losstype=config.training.loss
     )
     
     wer, cer = run_evaluation(

@@ -12,6 +12,7 @@ model:
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
   projector: "simple"
+  token_length: 30
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
   train_llm: false
@@ -28,7 +29,7 @@ training:
   resume_checkpoint_path: "checkpoints/checkpoint_latest.pt"
   load_lr_from_checkpoint: false
   log_every_n_steps: 10
-  kl_loss: true
+  loss: "kl_loss"
   kl_temp: 2.0
 
 eval:
