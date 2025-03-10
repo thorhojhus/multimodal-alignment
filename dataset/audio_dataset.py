@@ -22,6 +22,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
         elif dataset == "librispeech":
             from dataset.load_librispeech import librispeech_dataset_dict
             self.dataset = librispeech_dataset_dict[str(split)]
+        elif dataset == "cv_arabic":
+            from dataset.common_voice_ar import common_voice_ar_dataset_dict
+            self.dataset = common_voice_ar_dataset_dict[split]
         else:
             print("Unsupported dataset")
         if tokenizer is None:
