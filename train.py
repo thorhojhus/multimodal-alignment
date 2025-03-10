@@ -56,7 +56,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         dataset=cfg.dataset.name,
         split=cfg.dataset.split,
         tokenizer=model.tokenizer,
-        processor=processor
+        processor=processor,
+        T=cfg.model.token_length,
     )
     
     test_dataset = AudioChatDataset(
@@ -65,6 +66,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         split="test.clean",
         tokenizer=model.tokenizer,
         processor=processor,
+        T=cfg.model.token_length,
     )
     
     print_parameter_count(model, logger)
