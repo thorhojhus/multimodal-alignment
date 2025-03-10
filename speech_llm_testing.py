@@ -1,9 +1,16 @@
-from torch.nn import functional as F
+import torch
 import torch.nn as nn
 import transformers
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
-import torch
-from transformers import SpeechT5Model, BitsAndBytesConfig, SpeechT5Processor, SpeechT5HifiGan, AutoTokenizer, SpeechT5ForTextToSpeech
+from torch.nn import functional as F
+from transformers import SpeechT5ForTextToSpeech, SpeechT5Processor
+from torch.utils.data import DataLoader
+
+# Fix the tokenizer warnings
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+from dataset.load_librispeech import librispeech_dataset_dict
 
 torch.set_default_device("cuda")
 torch.set_default_dtype(torch.bfloat16)
@@ -202,97 +209,169 @@ output = llm_to_speech(tokens)
 print(output.shape)
 print(output)
 
+def collate_fn(batch, tokenizer, processor, device="cuda", dtype=torch.bfloat16):
+    """
+    Custom collate function that processes text inputs for the LLM and audio targets
+    for creating mel spectrograms.
+    
+    Args:
+        batch: List of samples from dataset
+        tokenizer: LLM tokenizer (Gemma)
+        processor: SpeechT5 processor
+        device: Device to place tensors on
+        dtype: Data type for spectrograms
+    """
+    # Extract text and audio from batch
+    texts = []
+    audios = []
+    sampling_rates = []
+    
+    for item in batch:
+        # Handle different text formats (string or list)
+        text = item["text"]
+        if isinstance(text, list):
+            text = text[0]
+        texts.append(text.lower())
+        
+        # Get audio and sampling rate
+        audios.append(item["audio"]["array"])
+        sampling_rates.append(item["audio"]["sampling_rate"])
+    
+    # Process text inputs in a batch (more efficient)
+    tokenized = tokenizer(
+        texts,
+        padding="longest",
+        truncation=True,
+        max_length=512,
+        return_tensors="pt"
+    ).to(device)
+    
+    # Process audio to get mel spectrograms
+    mel_specs = []
+    mel_lengths = []
+    
+    # Process audio in parallel if possible
+    for audio, sr in zip(audios, sampling_rates):
+        # Ensure audio is 1D
+        if isinstance(audio, torch.Tensor):
+            audio = audio.cpu().numpy().flatten()
+        else:
+            audio = audio.flatten()
+            
+        # Process using SpeechT5 processor
+        processed = processor(audio_target=audio, sampling_rate=sr)
+        mel_spec = torch.tensor(processed["input_values"], device=device, dtype=dtype)
+        
+        # Handle output shape (should be [batch, time, features])
+        if mel_spec.dim() == 2:
+            mel_spec = mel_spec.unsqueeze(0)
+            
+        mel_specs.append(mel_spec)
+        mel_lengths.append(mel_spec.size(1))  # Time dimension
+    
+    # Pad spectrograms to the same length in the batch
+    max_length = max(mel_lengths)
+    padded_specs = []
+    attention_masks = []
+    
+    for spec, length in zip(mel_specs, mel_lengths):
+        # Create padding if needed
+        if length < max_length:
+            padding = torch.zeros(
+                (spec.size(0), max_length - length, spec.size(2)), 
+                device=device, 
+                dtype=dtype
+            )
+            padded = torch.cat([spec, padding], dim=1)
+        else:
+            padded = spec
+            
+        # Create attention mask (1 for real values, 0 for padding)
+        mask = torch.zeros((spec.size(0), max_length), device=device)
+        mask[:, :length] = 1
+        
+        padded_specs.append(padded)
+        attention_masks.append(mask)
+    
+    # Stack on batch dimension
+    mel_spectrograms = torch.cat(padded_specs, dim=0)
+    mel_attention_masks = torch.cat(attention_masks, dim=0)
+    
+    return {
+        "input_ids": tokenized.input_ids,
+        "attention_mask": tokenized.attention_mask,
+        "target_spectrograms": mel_spectrograms,
+        "target_attention_mask": mel_attention_masks,
+        "target_lengths": torch.tensor(mel_lengths, device=device)
+    }
 
-from dataset.load_librispeech import librispeech_dataset_dict
-from torch.utils.data import DataLoader
-from torchaudio.transforms import MelSpectrogram
 
+def get_dataloader(dataset, tokenizer, processor, batch_size=8, shuffle=True):
+    # Create a CUDA generator for reproducible shuffling
+    generator = torch.Generator(device='cuda')
+    generator.manual_seed(42)  # Set seed for reproducibility
+    
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        generator=generator,  # Add the CUDA generator
+        collate_fn=lambda batch: collate_fn(batch, tokenizer, processor),
+        pin_memory=False,  # Already moving to device in collate_fn
+    )
 
-import torch.nn as nn
-import torch.nn.functional as F
+# Create dataloader with the custom collate function
+train_dataloader = get_dataloader(
+    librispeech_dataset_dict["train.clean.100"], 
+    tokenizer,
+    processor,
+    batch_size=8
+)
 
 class SpectrogramLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self.l1_criterion = nn.L1Loss(reduction='none')
+        self.l1_loss = nn.L1Loss(reduction='none')
         
-    def forward(self, outputs_after_postnet, target_spectrograms, target_lengths=None, output_lengths=None):
-        """
-        Args:
-            outputs_after_postnet: Model output spectrograms [batch_size, time_steps, n_mels]
-            target_spectrograms: Target spectrograms [batch_size, time_steps, n_mels]
-            target_lengths: Optional lengths of target sequences
-            output_lengths: Optional lengths of output sequences
-        """
-        # If we don't have explicit lengths, create masks based on non-zero values
-        # (assuming padding is zeros or we can create a mask differently)
-        if target_lengths is None:
-            # Create padding mask (assuming non-zero values are valid)
-            padding_mask = target_spectrograms.abs().sum(-1) > 0
+    def forward(self, predicted_specs, target_specs, target_mask=None):
+        # Handle different sequence lengths between model output and target
+        min_len = min(predicted_specs.size(1), target_specs.size(1))
+        pred = predicted_specs[:, :min_len, :]
+        target = target_specs[:, :min_len, :]
+        
+        # Apply mask if provided
+        if target_mask is not None:
+            mask = target_mask[:, :min_len].unsqueeze(-1)
+            loss = self.l1_loss(pred, target) * mask
+            # Average over non-masked elements
+            return loss.sum() / (mask.sum() + 1e-7)
         else:
-            # Create padding mask from lengths
-            max_len = target_spectrograms.size(1)
-            batch_size = target_spectrograms.size(0)
-            padding_mask = torch.arange(max_len, device=target_spectrograms.device)[None, :] < target_lengths[:, None]
-        
-        # Handle length differences - use the minimum length between output and target
-        min_len = min(outputs_after_postnet.size(1), target_spectrograms.size(1))
-        outputs = outputs_after_postnet[:, :min_len]
-        targets = target_spectrograms[:, :min_len]
-        mask = padding_mask[:, :min_len] if padding_mask.size(1) > min_len else padding_mask
-        
-        # Calculate L1 loss with masking
-        l1_loss = self.l1_criterion(outputs, targets)
-        # Apply mask and average
-        masked_l1_loss = (l1_loss * mask.unsqueeze(-1)).sum() / (mask.sum() * outputs.size(-1) + 1e-7)
-        
-        return masked_l1_loss
+            return self.l1_loss(pred, target).mean()
 
 ds = librispeech_dataset_dict["train.clean.360"]
 
 generator = torch.Generator(device='cuda')
-dl = DataLoader(ds, batch_size=1, shuffle=True, generator=generator)
-mel = MelSpectrogram(sample_rate=16000, n_mels=80, f_min=80, f_max=7600).to(torch.float32)
-# for batch in dl:
-#     text = batch["text"]
-#     tokens = tokenizer.encode(text[0].lower(), return_tensors="pt")
-#     audio = batch["audio"]["array"].to(torch.float32)
-#     mel_spec = mel(audio)
-#     print("Mel spectrogram shape")
-#     print(mel_spec.shape)
-#     mel_proc = processor(audio_target=audio.cpu().flatten(), sampling_rate=16000)["input_values"]
-#     print("Mel spectrogram shape")
-#     print(mel_proc.shape)
-#     outs = llm_to_speech(tokens)
-#     print("Model output shape")
-#     print(outs.shape)
-
-#     break
-
 loss_fn = SpectrogramLoss()
 
 # Training loop
-optimizer = torch.optim.Adam(adapter.parameters(), lr=1e-4)  # Only train adapter parameters
+optimizer = torch.optim.AdamW(adapter.parameters(), lr=1e-4)  # Only train adapter parameters
 
-for batch in dl:
-    text = batch["text"]
-    tokens = tokenizer.encode(text[0].lower(), return_tensors="pt").to("cuda")
-    audio = batch["audio"]["array"].to(torch.float32).cuda()
-    
-    # Get target spectrograms using SpeechT5 processor
-    # Note: You might need to adjust this to match the exact format your model outputs
-    target_specs = processor(audio_target=audio.cpu().flatten(), sampling_rate=16000)["input_values"]
-    target_specs = torch.tensor(target_specs, device="cuda", dtype=torch.bfloat16)
-    
-    # Forward pass
-    optimizer.zero_grad()
-    outputs = llm_to_speech(tokens)
-    
-    # Calculate loss
-    loss = loss_fn(outputs, target_specs)
-    
-    # Backward pass and optimize
-    loss.backward()
-    optimizer.step()
-    
-    print(f"Loss: {loss.item()}")
+for epoch in range(1):
+    for batch in train_dataloader:
+        # Extract batch data
+        input_ids = batch["input_ids"]
+        target_specs = batch["target_spectrograms"]
+        target_mask = batch["target_attention_mask"]
+        
+        # Forward pass
+        optimizer.zero_grad()
+        outputs = llm_to_speech(input_ids)
+        
+        # Calculate loss
+        loss = loss_fn(outputs, target_specs, target_mask)
+        
+        # Backward pass and optimize
+        loss.backward()
+        optimizer.step()
+        
+        print(f"Loss: {loss.item():.4f}")
