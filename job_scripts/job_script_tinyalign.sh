@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=facebook/wav2vec2-base-960h model.projector=tinyalign training.batch_size=32 training.loss=tinyalign model.load_in_4bit=true wandb.enabled=true
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=facebook/wav2vec2-base-960h model.projector=tinyalign training.batch_size=32 training.loss=embed_loss model.load_in_4bit=true wandb.enabled=true
 #python train.py
