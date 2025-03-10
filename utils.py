@@ -340,7 +340,6 @@ def run_evaluation_with_loss(
     logger: logging.Logger,
     n_samples: int,
     config,
-    test_dataset_tinyalign: torch.utils.data.Dataset | None = None
 ) -> Tuple[float, float, float]:
     """
     Run both evaluation loss calculation and WER/CER metrics.
@@ -363,7 +362,6 @@ def run_evaluation_with_loss(
         logger=logger,
         n_samples=n_samples,
         batch_size=config.eval.batch_size,
-        losstype=config.training.loss
     )
     
     wer, cer = run_evaluation(
