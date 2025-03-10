@@ -78,7 +78,7 @@ class AudioLLMModel(nn.Module):
         encoder_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         if type == "tinyalign":
-            return BridgeFormer(D_a=encoder_dim, T=self.config.model.token_length, D_l=embed_dim).to("cuda", torch.bfloat16)
+            return BridgeFormer(encoder_dim=encoder_dim, token_length=self.config.model.token_length, embed_dim=embed_dim).to("cuda", torch.bfloat16)
         elif type == "linear":
             return LinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)

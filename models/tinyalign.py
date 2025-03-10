@@ -38,39 +38,47 @@ class MLP(nn.Module):
 class BridgeFormer(nn.Module):
     """BridgeFormer component of the TinyAlign framework.
     Args:
-        D_a (int): Input audio feature dimension size
-        T (int): Target token length
-        D_l (int): Output feature dimension (LLM embedding dimenison)
-        H (int): Hidden dimension (default: 256)
-        M (int): Number of attention heads (default: 4)
-        E (int): Number of encoder layers (default: 4)
+        encoder_dim (int): Input audio feature dimension size
+        token_length (int): Target token length
+        embed_dim (int): Output feature dimension (LLM embedding dimenison)
+        hidden_dim (int): Hidden dimension (default: 256)
+        attention_heads (int): Number of attention heads (default: 4)
+        encoder_layers (int): Number of encoder layers (default: 4)
     """
 
-    def __init__(self, D_a: int, T: int, D_l: int, H: int = 256, M: int = 4, E: int = 4):
+    def __init__(
+            self,
+            encoder_dim: int,
+            token_length: int,
+            embed_dim: int,
+            hidden_dim: int = 256,
+            attention_heads: int = 4,
+            encoder_layers: int = 4
+        ):
         super().__init__()
 
         # GeLU
         self.GELU = nn.GELU()
 
         # Input projection
-        self.input_mlp = MLP(D_a, H, act=self.GELU)
+        self.input_mlp = MLP(encoder_dim, hidden_dim, act=self.GELU)
         
         # Transformer encoder setup
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=H,
-            nhead=M,
+            d_model=hidden_dim,
+            nhead=attention_heads,
             batch_first=True,
             norm_first=True  # Pre-norm is generally more stable
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=E)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=encoder_layers)
         
         # Pooling and output projection
-        self.conv = nn.Conv1d(in_channels=H, out_channels=H, kernel_size=3, padding=1)
-        self.adaptive_pooling = nn.AdaptiveAvgPool1d(output_size=T)
+        self.conv = nn.Conv1d(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=3, padding=1)
+        self.adaptive_pooling = nn.AdaptiveAvgPool1d(output_size=token_length)
 
-        self.output_mlp = MLP(H, D_l, act=self.GELU)
+        self.output_mlp = MLP(hidden_dim, embed_dim, act=self.GELU)
         
-        self._dimensions = {'D_a': D_a, 'T': T, 'D_l': D_l, 'H': H}
+        self._dimensions = {'D_a': encoder_dim, 'T': token_length, 'D_l': embed_dim, 'H': hidden_dim}
 
     def forward(self, audio_features: Tensor) -> Tensor:
         # Input projection: [batch, seq_len, D_a] -> [batch, seq_len, H]
@@ -88,13 +96,13 @@ class BridgeFormer(nn.Module):
         
         # Output projection: [batch, T, H] -> [batch, T, D_l]
         features = self.output_mlp(features)
-        
+
         return features
 
 if __name__ == "__main__":
     # Example usage
     audio_features = torch.randn(1, 1000, 80).to("cuda")
-    model = BridgeFormer(D_a=80, T=100, D_l=80).to("cuda")
+    model = BridgeFormer(encoder_dim=80, token_length=100, embed_dim=80).to("cuda")
     model.to("cuda")
     torchinfo.summary(model)
     output = model(audio_features)
