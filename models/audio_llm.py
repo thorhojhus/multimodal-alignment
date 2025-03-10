@@ -92,7 +92,7 @@ class AudioLLMModel(nn.Module):
         if self.audio_token_str not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens({"additional_special_tokens": [self.audio_token_str]})
 
-    def bridgeformer_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
+    def embed_loss(self, audio_embeddings: Tensor, text_embeddings: Tensor):
         # Calculate embedding loss for TinyAlign BridgeFormer (embed_loss)
         embed_loss = self.alpha * self.MSELoss(audio_embeddings, text_embeddings) + self.beta * (1 - self.CosSim(audio_embeddings, text_embeddings)).mean()
         return SimpleNamespace(loss=embed_loss)
@@ -181,7 +181,7 @@ class AudioLLMModel(nn.Module):
         if self.config.training.loss=="embed_loss":
             text_embeddings = self.lm.get_input_embeddings()(text_ids)
             audio_embeddings = self._process_audio_features(audio_features)
-            return self.bridgeformer_loss(audio_embeddings, text_embeddings)
+            return self.embed_loss(audio_embeddings, text_embeddings)
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
