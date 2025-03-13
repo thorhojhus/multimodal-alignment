@@ -32,7 +32,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 
 def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
-        wandb_run = setup_wandb(cfg)
+        setup_wandb(cfg)
     OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
     
     model = AudioLLMModel(cfg)
@@ -159,7 +159,7 @@ def train_multiple(cfg: DictConfig) -> None:
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
                 if cfg.wandb.enabled:
-                    wandb_run.log({
+                    wandb.log({
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
                     }, global_step)
             
@@ -195,7 +195,7 @@ def train_multiple(cfg: DictConfig) -> None:
                     f"WER: {wer:.2f} | CER: {cer:.2f}"
                 )
                 if cfg.wandb.enabled:
-                    wandb_run.log({
+                    wandb.log({
                         "eval/loss": eval_loss,
                         "eval/wer": wer,
                         "eval/cer": cer
@@ -229,14 +229,14 @@ def train_multiple(cfg: DictConfig) -> None:
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
         if cfg.wandb.enabled:
-            wandb_run.log({
+            wandb.log({
                 "train/epoch_loss": avg_loss,
                 "eval/epoch_loss": eval_loss,
                 "eval/epoch_wer": wer,
                 "eval/epoch_cer": cer
             })
-    
-    wandb_run.finish(0)
+    if cfg.wandb.enabled:
+        wandb.finish(0)
         
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config_sweep")
