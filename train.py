@@ -63,7 +63,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
-        split="test.clean",
+        split=cfg.dataset.test_split,
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
@@ -83,7 +83,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
         shuffle=True,
         num_workers=8,
-        prefetch_factor=2,
+        prefetch_factor=4,
         pin_memory=True
     )
     

@@ -32,6 +32,9 @@ def main(cfg: DictConfig):
         from dataset.load_coral import coral_dataset_dict
         dataset = coral_dataset_dict["test"]
         processor.get_decoder_prompt_ids(language="danish", task="transcribe")
+    elif cfg.dataset.name == "cv_arabic":
+        from dataset.load_cv_arabic import cv_arabic_dataset_dict
+        dataset = cv_arabic_dataset_dict["test"]
 
     dataloader = DataLoader(dataset, batch_size=1)
 

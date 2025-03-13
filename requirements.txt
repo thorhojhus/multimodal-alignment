@@ -2,7 +2,7 @@ torch
 torchaudio
 bitsandbytes
 accelerate
-transformers
+git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3
 evaluate
 jiwer
 trl
@@ -17,4 +17,6 @@ hydra-core
 wandb
 ipython
 jupyter
+sentencepiece
+torchinfo
 peft
