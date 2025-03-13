@@ -32,7 +32,6 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 
 def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
-        print("ENTERING HERE \n\n\n\n\n\n")
         wandb_run = setup_wandb(cfg)
     OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
     
