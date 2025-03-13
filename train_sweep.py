@@ -161,7 +161,7 @@ def train_multiple(cfg: DictConfig) -> None:
                 if cfg.wandb.enabled:
                     wandb.log({
                         "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
-                    }, global_step)
+                    })
             
 
             # run evaluation and loss calculation if needed
@@ -199,7 +199,7 @@ def train_multiple(cfg: DictConfig) -> None:
                         "eval/loss": eval_loss,
                         "eval/wer": wer,
                         "eval/cer": cer
-                    }, global_step)
+                    })
 
             # reset batch timer
             batch_start_time = time.monotonic()
