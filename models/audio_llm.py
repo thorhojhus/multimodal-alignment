@@ -211,7 +211,13 @@ class AudioLLMModel(nn.Module):
                 inputs_embeds=combined_embeds,
                 attention_mask=combined_attention_mask,
             )
-            return self._compute_kl_loss(lm_output=lm_output, labels=combined_labels, alt_input_ids=alt_input_ids, alt_labels=alt_labels)
+            return self._compute_kl_loss(
+                lm_output=lm_output, 
+                labels=combined_labels, 
+                alt_input_ids=alt_input_ids, 
+                alt_attention_mask=alt_attention_mask,
+                alt_labels=alt_labels
+            )
         
         # forward pass through language model (cross-entropy loss)
         return self.lm(

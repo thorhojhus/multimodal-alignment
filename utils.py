@@ -304,6 +304,7 @@ def calculate_eval_loss(
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+            alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             text_ids = batch["text_ids"].to("cuda", non_blocking=True)
@@ -315,6 +316,7 @@ def calculate_eval_loss(
                 labels=labels,
                 alt_input_ids=alt_input_ids,
                 alt_labels=alt_labels,
+                alt_attention_mask=alt_attention_mask,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
                 text_ids=text_ids

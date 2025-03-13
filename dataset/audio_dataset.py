@@ -211,6 +211,7 @@ def collate_fn(batch, tokenizer, T):
     audio_features = []
     alt_input_ids = []
     alt_labels = []
+    alt_attention_mask = []
     
     for item in batch:
         # pad input_ids and labels
@@ -223,6 +224,11 @@ def collate_fn(batch, tokenizer, T):
         
         alt_input_ids.append(torch.nn.functional.pad(item["alt_input_ids"], (0, alt_pad_len), value=pad_token_id))
         alt_labels.append(torch.nn.functional.pad(item["alt_labels"], (0, alt_pad_len), value=-100))
+        
+        # create attention mask for alt_input_ids (1s for tokens, 0s for padding)
+        alt_mask = torch.ones(len(item["alt_input_ids"]), dtype=torch.long)
+        alt_mask = torch.nn.functional.pad(alt_mask, (0, alt_pad_len), value=0)
+        alt_attention_mask.append(alt_mask)
 
         # pad/cutoff text_ids if using EmbedLoss:
         if len(item["text_ids"]) > T:
@@ -238,6 +244,7 @@ def collate_fn(batch, tokenizer, T):
     labels = torch.stack(labels)
     alt_input_ids = torch.stack(alt_input_ids)
     alt_labels = torch.stack(alt_labels)
+    alt_attention_mask = torch.stack(alt_attention_mask)
 
     # handle audio features based on model type
     if isinstance(audio_features[0], torch.Tensor):
@@ -249,7 +256,7 @@ def collate_fn(batch, tokenizer, T):
         )
     elif isinstance(audio_features[0], BatchFeature):
         # for wav2vec2-bert and seamless models
-        # Extract and pad the features
+        # extract and pad the features
         features_list = [af.input_features[0] for af in audio_features]  # Remove batch dimension
         audio_features = torch.nn.utils.rnn.pad_sequence(
             features_list,
@@ -257,7 +264,7 @@ def collate_fn(batch, tokenizer, T):
             padding_value=0.0
         )
         
-        # Create appropriate attention mask
+        # create appropriate attention mask
         max_len = audio_features.size(1)
         attention_mask = torch.zeros((len(features_list), max_len), dtype=torch.long)
         for i, feat in enumerate(features_list):
@@ -283,6 +290,7 @@ def collate_fn(batch, tokenizer, T):
         "insertion_indices": prepared_insertion_indices,
         "alt_input_ids": alt_input_ids,
         "alt_labels": alt_labels,
+        "alt_attention_mask": alt_attention_mask,
         "text_ids": text_ids
     }
 
