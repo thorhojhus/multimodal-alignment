@@ -36,13 +36,9 @@ GEMMA_2 = """{{ bos_token }}
 GEMMA_3 = """{{ bos_token }}
 {%- if messages[0]['role'] == 'system' -%}
     {%- if messages[0]['content'] is string -%}
-        {%- set first_user_prefix = messages[0]['content'] + '
-
-' -%}
+        {%- set first_user_prefix = messages[0]['content'] + '\n\n' -%}
     {%- else -%}
-        {%- set first_user_prefix = messages[0]['content'][0]['text'] + '
-
-' -%}
+        {%- set first_user_prefix = messages[0]['content'][0]['text'] + '\n\n' -%}
     {%- endif -%}
     {%- set loop_messages = messages[1:] -%}
 {%- else -%}
@@ -55,8 +51,7 @@ GEMMA_3 = """{{ bos_token }}
     {%- else -%}
         {%- set role = message['role'] -%}
     {%- endif -%}
-    {{ '<start_of_turn>' + role + '
-' + (first_user_prefix if loop.first else "") }}
+    {{ '<start_of_turn>' + role + '\n' + (first_user_prefix if loop.first and message['role'] == 'user' else "") }}
     {%- if message['content'] is string -%}
         {{ message['content'] | trim }}
     {%- elif message['content'] is iterable -%}
@@ -70,10 +65,8 @@ GEMMA_3 = """{{ bos_token }}
     {%- else -%}
         {{ raise_exception("Invalid content type") }}
     {%- endif -%}
-    {{ '<end_of_turn>
-' }}
+    {{ '<end_of_turn>\n' }}
 {%- endfor -%}
 {%- if add_generation_prompt -%}
-    {{'<start_of_turn>model
-'}}
+    {{'<start_of_turn>model\n'}}
 {%- endif -%}"""
