@@ -59,14 +59,25 @@ class AudioLLMModel(nn.Module):
             bnb_4bit_compute_dtype=torch.bfloat16
         ) if self.config.model.load_in_4bit else None
 
-        # initialize language model with flash attention
-        lm = AutoLigerKernelForCausalLM.from_pretrained(
-            self.config.model.lm_model_name,
-            attn_implementation="flash_attention_2",
-            torch_dtype=torch.bfloat16,
-            device_map="cuda",
-            quantization_config=quantization_config
-        )
+        if "gemma-3" in self.config.model.lm_model_name:
+            from transformers import Gemma3ForCausalLM
+            # no liger support for gemma-3 yet
+            lm = Gemma3ForCausalLM.from_pretrained(
+                self.config.model.lm_model_name,
+                attn_implementation="flash_attention_2",
+                torch_dtype=torch.bfloat16,
+                device_map="cuda",
+                quantization_config=quantization_config
+            )
+        else:
+            # initialize language model with flash attention and liger kernels for memory efficiency
+            lm = AutoLigerKernelForCausalLM.from_pretrained(
+                self.config.model.lm_model_name,
+                attn_implementation="flash_attention_2",
+                torch_dtype=torch.bfloat16,
+                device_map="cuda",
+                quantization_config=quantization_config
+            )
 
         # freeze lm parameters
         for param in lm.parameters():

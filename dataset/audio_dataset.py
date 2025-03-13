@@ -4,7 +4,7 @@ from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
 from transformers import BatchFeature
 
-from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE
+from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE, GEMMA_3
 
 
 class AudioChatDataset(torch.utils.data.Dataset):
@@ -14,7 +14,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  tokenizer=None, 
                  processor=None,
                  T=30):
-        self.lm_model_name = lm_model.split("/")[-1].split("-")[0].lower()
+        self.lm_model_name = lm_model
         self.dataset_name = dataset
         if dataset == "coral":
             from dataset.load_coral import coral_dataset_dict
@@ -40,12 +40,14 @@ class AudioChatDataset(torch.utils.data.Dataset):
         return len(self.dataset)
     
     def _setup_chat_template(self):
-        if self.lm_model_name == "smollm2":
+        if "SmolLM2" in self.lm_model_name:
             self.tokenizer.chat_template = CHATML_TEMPLATE
-        elif self.lm_model_name == "llama":
+        elif "Llama-3" in self.lm_model_name:
             self.tokenizer.chat_template = LLAMA3_TEMPLATE
-        elif self.lm_model_name == "gemma":
+        elif "gemma-2" in self.lm_model_name:
             self.tokenizer.chat_template = GEMMA_2
+        elif "gemma-3" in self.lm_model_name:
+            self.tokenizer.chat_template = GEMMA_3
         else:
             print("Custom chat template not found")
             pass
