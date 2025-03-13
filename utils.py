@@ -71,9 +71,12 @@ def load_checkpoint(
     return checkpoint['global_step'], checkpoint['loss']
 
 def get_user_prompts_batch(ids_batch, model_name: str, tokenizer) -> Tuple[torch.Tensor, torch.Tensor]:
-    token_id = tokenizer.bos_token_id
-    if model_name == "gemma":
+    if "gemma-2" in model_name:
         token_id = 106  # <|start_of_turn|>
+    elif "gemma-3" in model_name:
+        token_id = 105 # <|start_of_turn|>
+    else:
+        token_id = tokenizer.bos_token_id
 
     prompts = []
     masks = []
@@ -99,11 +102,15 @@ def get_user_prompts_batch(ids_batch, model_name: str, tokenizer) -> Tuple[torch
     return torch.stack(padded_prompts), torch.stack(padded_masks)
 
 def get_ground_truths_batch(ids_batch, model_name: str, tokenizer) -> List[str]:
-    begin_of_turn = tokenizer.bos_token_id
-    end_of_turn = tokenizer.eos_token_id
-    if model_name == "gemma":
+    if "gemma-2" in model_name:
         begin_of_turn = 106  # <|start_of_turn|>
         end_of_turn = 107  # <|end_of_turn|>
+    elif "gemma-3" in model_name:
+        begin_of_turn = 105 # <|start_of_turn|>
+        end_of_turn = 106 # <|end_of_turn|>
+    else:
+        begin_of_turn = tokenizer.bos_token_id
+        end_of_turn = tokenizer.eos_token_id
 
     ground_truths = []
     for ids in ids_batch:
@@ -180,7 +187,7 @@ def run_evaluation(
     """
     model.eval()
     torch.cuda.empty_cache()
-    model_name = config.model.lm_model_name.split("/")[-1].split("-")[0].lower()
+    model_name = config.model.lm_model_name
     
     # adjust n_samples if it exceeds dataset size
     if n_samples is None:
@@ -297,6 +304,7 @@ def calculate_eval_loss(
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
             alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+            alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             text_ids = batch["text_ids"].to("cuda", non_blocking=True)
@@ -308,6 +316,7 @@ def calculate_eval_loss(
                 labels=labels,
                 alt_input_ids=alt_input_ids,
                 alt_labels=alt_labels,
+                alt_attention_mask=alt_attention_mask,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
                 text_ids=text_ids
