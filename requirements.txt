@@ -2,7 +2,7 @@ torch
 torchaudio
 bitsandbytes
 accelerate
-transformers==4.48.3
+git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3
 evaluate
 jiwer
 trl
