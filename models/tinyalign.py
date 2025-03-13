@@ -51,9 +51,9 @@ class BridgeFormer(nn.Module):
             encoder_dim: int,
             token_length: int,
             embed_dim: int,
-            hidden_dim: int = 256,
-            attention_heads: int = 4,
-            encoder_layers: int = 4
+            hidden_dim: int = 1024,
+            attention_heads: int = 8,
+            encoder_layers: int = 8
         ):
         super().__init__()
 

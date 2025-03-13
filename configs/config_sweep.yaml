@@ -1,0 +1,43 @@
+hydra:
+  job:
+    chdir: true
+
+wandb:
+  enabled: false
+  run_name: "default"
+
+model:
+  downsample_factor: 10
+  lm_model_name: "google/gemma-2-2b-it"
+  load_in_4bit: false
+  encoder_model_name: "openai/whisper-base"
+  projector: "simple" # can be simple (ultravox style), tinyalign, linear (one layer)
+  token_length: 30
+  audio_tokenizer: false
+  audio_tokenizer_vocab_size: 16384
+  train_llm: false
+  train_encoder: false
+
+training:
+  num_epochs: 2
+  batch_size: 16
+  lr: 3e-4
+  warmup_steps: 50
+  checkpoint_dir: "checkpoints"
+  evaluate_every_n_steps: 1000
+  resume_from_checkpoint: false
+  resume_checkpoint_path: "checkpoints/checkpoint_latest.pt"
+  load_lr_from_checkpoint: false
+  log_every_n_steps: 10
+  loss: "kl_loss" # can be kl_loss, embed_loss or none for ce
+  kl_temp: 2.0
+
+eval:
+  n_samples: 64
+  batch_size: 8
+
+
+dataset:
+  name: "librispeech"
+  split: "train.clean.360"
+  test_split: "test.clean"
