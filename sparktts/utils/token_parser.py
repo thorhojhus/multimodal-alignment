@@ -69,11 +69,6 @@ class TokenParser:
     def __init__(self):
         pass
 
-    """Parse the attributes of a person."""
-
-    def __init__(self):
-        pass
-
     @staticmethod
     def age(age: str) -> str:
         """Turn age token."""

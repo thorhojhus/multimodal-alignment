@@ -1,5 +1,9 @@
+# modifications 2025 Oliver Glozmann Bork Hansen
+# modified round_up_multiple to use math.ceil instead of (undefined) ceil
+
 import random
 import torch
+import math
 import torch.nn.functional as F
 import torch.distributed as dist
 
@@ -26,7 +30,7 @@ def default(val, d):
 
 
 def round_up_multiple(num, mult):
-    return ceil(num / mult) * mult
+    return math.ceil(num / mult) * mult
 
 
 # distributed helpers

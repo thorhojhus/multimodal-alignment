@@ -1,6 +1,6 @@
 # Copyright (c) 2025 SparkAudio
 #               2025 Xinsheng Wang (w.xinshawn@gmail.com)
-#
+# Modifications 2025 Oliver Glozmann Bork Hansen
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -12,6 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# ==============================================================================
+# Modifications
+# ==============================================================================
+# Fixed return type of detokenize
 
 
 import torch
@@ -131,7 +136,7 @@ class BiCodecTokenizer:
 
     def detokenize(
         self, global_tokens: torch.Tensor, semantic_tokens: torch.Tensor
-    ) -> np.array:
+    ) -> torch.Tensor:
         """detokenize the tokens to waveform
 
         Args:
@@ -143,7 +148,7 @@ class BiCodecTokenizer:
         """
         global_tokens = global_tokens.unsqueeze(1)
         wav_rec = self.model.detokenize(semantic_tokens, global_tokens)
-        return wav_rec.detach().squeeze().cpu().numpy()
+        return wav_rec.detach().squeeze().cpu()
 
 
 # test
