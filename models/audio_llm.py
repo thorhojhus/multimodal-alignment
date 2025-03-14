@@ -206,8 +206,7 @@ class AudioLLMModel(nn.Module):
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
-        print(audio_embeds.shape)
-
+        
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences

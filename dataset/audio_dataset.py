@@ -263,7 +263,6 @@ def collate_fn(batch, tokenizer, T):
             for feat in audio_features:
                 # reshape to T,C
                 feat = feat.squeeze(0).transpose(0, 1)
-                print(feat.size())
                 reshaped_features.append(feat)
             # back to B,C,T    
             audio_features = torch.nn.utils.rnn.pad_sequence(

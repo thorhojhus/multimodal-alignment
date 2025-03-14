@@ -80,6 +80,9 @@ class EncoderWrapper(AutoModel):
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
             case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
                 return self.audio_encoder.config.hidden_size
+            case EncoderEnum.MIMI:
+                # For Mimi, no projection dimension needed as we handle the tokens directly with MimiTokenizer
+                return 32  # Number of codebooks in Mimi
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
@@ -92,6 +95,8 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
                 return audio_encoded
             case EncoderEnum.MIMI:
+                # Mimi encoder outputs audio codes in shape [batch_size, 32, seq_len]
+                # No transformation needed as MimiTokenizer handles this shape directly
                 return audio_encoded
 
     def __call__(self, *args, **kwargs):
