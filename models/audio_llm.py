@@ -61,7 +61,7 @@ class AudioLLMModel(nn.Module):
 
         if "gemma-3" in self.config.model.lm_model_name:
             from transformers import Gemma3ForCausalLM
-            # no liger support for gemma-3 yet
+            # no liger support for gemma-3 yet, can also not get anything but google/gemma-3-1b-it to work
             lm = Gemma3ForCausalLM.from_pretrained(
                 self.config.model.lm_model_name,
                 attn_implementation="flash_attention_2",
