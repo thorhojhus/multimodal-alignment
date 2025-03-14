@@ -3,6 +3,8 @@ from typing import Any, List, Literal, Optional, Tuple, Union, Dict
 
 import torch
 import transformers
+import os
+
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch import Tensor, nn
@@ -12,6 +14,7 @@ from models.encoders import EncoderWrapper
 from models.UltravoxProjector import Projector
 from models.LinearProjector import LinearProjector
 from models.tinyalign import BridgeFormer
+from models.SparkTTS import SparkTTS
 
 
 class AudioLLMModel(nn.Module):
@@ -33,6 +36,8 @@ class AudioLLMModel(nn.Module):
         if self.tokenizer.pad_token == self.tokenizer.eos_token:
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
+
+        self.sparktts_head = self._setup_sparktts_wrapmodel() if config.model.use_sparktts else None
 
         self.alpha = 1.0
         self.beta = 1.0
@@ -83,6 +88,14 @@ class AudioLLMModel(nn.Module):
         for param in lm.parameters():
             param.requires_grad = False
         return lm
+
+    def _setup_sparktts_wrapmodel(self) -> SparkTTS:
+        sparktts_wrap = SparkTTS(os.environ["HF_HOME"], self.config.model.load_in_4bit)
+
+        for param in sparktts_wrap.model.parameters():
+            param.requires_grad = False
+
+        return sparktts_wrap
 
     def _create_projector(self, type: Literal["simple", "tinyalign"]) -> Projector:
         # get dimensions for projector
@@ -255,6 +268,18 @@ class AudioLLMModel(nn.Module):
             attention_mask=combined_attention_mask,
             **generation_config
         )
+    
+    def generate_tts(
+        self, input_text: str
+    ) -> Tensor:
+            """Return an output tensor from the SparkTTS model inference"""
+            transcription = self.sparktts_head.inference(
+                input_text ,
+                gender="male",
+                speed="moderate",
+                pitch="moderate",
+            ) # default values for inference; if gender is not specified, it breaks.
+            return transcription
 
     def _compute_kl_loss(
         self,
