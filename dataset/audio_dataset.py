@@ -56,6 +56,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
         
         if "SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__:
             target_sampling_rate = 16000
+        elif "Encodec" in self.processor.__class__.__name__:
+            target_sampling_rate = self.processor.sampling_rate
         else:
             target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
@@ -89,6 +91,13 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 return_tensors="pt",
                 truncation=True,
             ).input_features[0]
+        elif ("Encodec" in self.processor.__class__.__name__):
+            return self.processor(
+                raw_audio=audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt",
+            )["input_values"]
+        
 
 
     def _format_chat(self, example, audio):
@@ -249,11 +258,26 @@ def collate_fn(batch, tokenizer, T):
     # handle audio features based on model type
     if isinstance(audio_features[0], torch.Tensor):
         # for wav2vec and other raw waveform models
-        audio_features = torch.nn.utils.rnn.pad_sequence(
-            audio_features, 
-            batch_first=True, 
-            padding_value=0.0
-        )
+        if len(audio_features[0].size()) == 3:
+            reshaped_features = []
+            for feat in audio_features:
+                # reshape to T,C
+                feat = feat.squeeze(0).transpose(0, 1)
+                print(feat.size())
+                reshaped_features.append(feat)
+            # back to B,C,T    
+            audio_features = torch.nn.utils.rnn.pad_sequence(
+                    reshaped_features,
+                    batch_first=True,
+                    padding_value=0.0
+            ).transpose(1, 2)
+                
+        else:
+            audio_features = torch.nn.utils.rnn.pad_sequence(
+                audio_features, 
+                batch_first=True, 
+                padding_value=0.0
+            )
     elif isinstance(audio_features[0], BatchFeature):
         # for wav2vec2-bert and seamless models
         # extract and pad the features

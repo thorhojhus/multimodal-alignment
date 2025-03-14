@@ -45,7 +45,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     best_eval_loss = float('inf')
 
     # create dataset and processor
-    if "w2v-bert" in cfg.model.encoder_model_name:
+    if ("w2v-bert" in cfg.model.encoder_model_name) or ("mimi" in cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
     else:
