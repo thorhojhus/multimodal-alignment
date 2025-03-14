@@ -1,8 +1,6 @@
-# ORIGINAL CODE FROM https://github.com/SparkAudio/Spark-TTS/tree/ee29f36806237be088e71931d9e0a4ab91b34adf SHOWN BELOW
-#
 # Copyright (c) 2025 SparkAudio
 #               2025 Xinsheng Wang (w.xinshawn@gmail.com)
-#
+# Modifications 2025 Oliver Glozmann Bork Hansen
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -14,23 +12,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# ===================================================================================
+# Modifications
+# ===================================================================================
+# This file has been modified from the original version to work with the Liger Kernel
 
 import re
 import torch
+import transformers
 from typing import Tuple
 from pathlib import Path
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer
 
 from sparktts.utils.file import load_config
 from sparktts.models.audio_tokenizer import BiCodecTokenizer
 from sparktts.utils.token_parser import LEVELS_MAP, GENDER_MAP, TASK_TOKEN_MAP
+
+from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 class SparkTTS:
     """
     Spark-TTS for text-to-speech generation.
     """
 
-    def __init__(self, model_dir: Path, device: torch.device = torch.device("cuda:0")):
+    def __init__(self, model_dir: Path, load_in_4bit: bool, device: torch.device = torch.device("cuda:0")):
         """
         Initializes the SparkTTS model with the provided configurations and device.
 
@@ -38,18 +44,33 @@ class SparkTTS:
             model_dir (Path): Directory containing the model and config files.
             device (torch.device): The device (CPU/GPU) to run the model on.
         """
+        self.load_in_4bit = load_in_4bit
         self.device = device
         self.model_dir = model_dir
         self.configs = load_config(f"{model_dir}/config.yaml")
         self.sample_rate = self.configs["sample_rate"]
-        self._initialize_inference()
+        self._initialize_inference(load_in_4bit)
 
-    def _initialize_inference(self):
+    def _initialize_inference(self, load_in_4bit: bool):
         """Initializes the tokenizer, model, and audio tokenizer for inference."""
         self.tokenizer = AutoTokenizer.from_pretrained(f"{self.model_dir}/LLM")
-        self.model = AutoModelForCausalLM.from_pretrained(f"{self.model_dir}/LLM")
+
+        # set quantization configuration
+        quantization_config = transformers.BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_compute_dtype=torch.bfloat16
+        ) if load_in_4bit else None
+
+        self.model = AutoLigerKernelForCausalLM.from_pretrained(
+            f"{self.model_dir}/LLM", 
+            attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            quantization_config=quantization_config)
+        
         self.audio_tokenizer = BiCodecTokenizer(self.model_dir, device=self.device)
-        self.model.to(self.device)
 
     def process_prompt(
         self,
