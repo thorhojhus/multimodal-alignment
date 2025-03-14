@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from typing import Any, List, Literal, Optional, Tuple, Union, Dict
+import typing
 
 import torch
 import transformers
@@ -280,6 +281,16 @@ class AudioLLMModel(nn.Module):
                 pitch="moderate",
             ) # default values for inference; if gender is not specified, it breaks.
             return transcription
+
+    def audio_reconstruction_loss(self, in_audio_wav: Tensor, out_audio_wav: Tensor, loss_type: typing.Literal["MAE", "MSE"]) -> Tensor:
+        """Reconstruction loss for audio."""
+
+        if loss_type == "MAE":
+            return F.l1_loss(in_audio_wav, out_audio_wav)
+        elif loss_type == "MSE":
+            return F.mse_loss(in_audio_wav, out_audio_wav)
+        else:
+            raise NotImplementedError(f"Loss type {loss_type} not implemented.")
 
     def _compute_kl_loss(
         self,

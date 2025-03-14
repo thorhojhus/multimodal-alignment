@@ -16,7 +16,8 @@
 # ===================================================================================
 # Modifications
 # ===================================================================================
-# This file has been modified from the original version to work with the Liger Kernel
+# - This file has been modified from the original version to work with the Liger Kernel
+# - Inference is batch based now
 
 import re
 import torch
@@ -179,7 +180,7 @@ class SparkTTS:
     @torch.no_grad()
     def inference(
         self,
-        text: str,
+        input_texts: list[str],
         prompt_speech_path: Path = None,
         prompt_text: str = None,
         gender: str = None,
@@ -207,14 +208,15 @@ class SparkTTS:
             torch.Tensor: Generated waveform as a tensor.
         """
         if gender is not None:
-            prompt = self.process_prompt_control(gender, pitch, speed, text)
+            prompts = [self.process_prompt_control(gender, pitch, speed, text) for text in input_texts]
 
         else:
-            prompt, global_token_ids = self.process_prompt(
-                text, prompt_speech_path, prompt_text
-            )
-        model_inputs = self.tokenizer([prompt], return_tensors="pt").to(self.device)
-
+            raise UserWarning("Not supposed to be here")
+            #prompt, global_token_ids = self.process_prompt(
+            #    text, prompt_speech_path, prompt_text
+            #)
+        model_inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, padding_side="left").to(self.device)
+        
         # Generate speech using the model
         generated_ids = self.model.generate(
             **model_inputs,
@@ -224,35 +226,35 @@ class SparkTTS:
             top_p=top_p,
             temperature=temperature,
         )
-
         # Trim the output tokens to remove the input tokens
-        generated_ids = [
-            output_ids[len(input_ids) :]
-            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+        generated_ids_processed = [
+            output_ids[len(input_ids) :] 
+            for input_ids, output_ids 
+            in zip(model_inputs.input_ids, generated_ids)
         ]
-
         # Decode the generated tokens into text
-        predicts = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-
+        predicts = self.tokenizer.batch_decode(generated_ids_processed, skip_special_tokens=True)
+        
         # Extract semantic token IDs from the generated text
-        pred_semantic_ids = (
-            torch.tensor([int(token) for token in re.findall(r"bicodec_semantic_(\d+)", predicts)])
-            .long()
+        pred_semantic_ids = [(
+            torch.tensor([int(token) for token in re.findall(r"bicodec_semantic_(\d+)", predict)])
             .unsqueeze(0)
-        )
+            .long()
+        ) for predict in predicts]
 
+        
         if gender is not None:
-            global_token_ids = (
-                torch.tensor([int(token) for token in re.findall(r"bicodec_global_(\d+)", predicts)])
+            global_token_ids = [(
+                torch.tensor([int(token) for token in re.findall(r"bicodec_global_(\d+)", predict)])
                 .long()
                 .unsqueeze(0)
                 .unsqueeze(0)
-            )
+            ) for predict in predicts]
 
         # Convert semantic tokens back to waveform
-        wav = self.audio_tokenizer.detokenize(
-            global_token_ids.to(self.device).squeeze(0),
-            pred_semantic_ids.to(self.device),
-        )
+        wavs = [self.audio_tokenizer.detokenize(
+            g_ids.to(self.device).squeeze(0),
+            p_ids.to(self.device),
+        ) for g_ids, p_ids in zip(global_token_ids, pred_semantic_ids)]
 
-        return wav
+        return wavs
