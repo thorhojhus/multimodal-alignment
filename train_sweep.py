@@ -4,6 +4,7 @@ import time
 from datetime import timedelta
 import hydra
 import torch
+from torchinfo import summary
 import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def setup_wandb(runtime_config: DictConfig) -> None:
     wandb.init(
         entity="borkeren",
-        project="downsample-factor-sweep",
+        project="vocab-size-sweep",
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}"
              if runtime_config.wandb.run_name == "default"
              else runtime_config.wandb.run_name,
@@ -33,10 +34,13 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-    OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
-    
-    model = AudioLLMModel(cfg)
+    OmegaConf.update(cfg, "model.audio_tokenizer_vocab_size", wandb.config["vocab_size"])
+    if cfg.wandb.enabled:
+        wandb.run.name = f"{cfg.wandb.run_name}-({wandb.config['vocab_size']})"
 
+    model = AudioLLMModel(cfg)
+    summary(model)
+    
     # freeze non-trainable components
     for param in model.lm.parameters():
         param.requires_grad = False    
@@ -253,14 +257,16 @@ def main(cfg: DictConfig):
     # initialize components using config values from Hydra
 
     sweep_config = {
-        "method": "random",
+        "method": "grid",
         "metric": {"name": "eval/loss", "goal": "minimize"},
         "parameters": {
-            "downsample_factor": {"min": 1, "max": 50}
+            "vocab_size": {
+                "values": [512, 1024, 2048, 4096, 8192, 16384]
+            },
         }
     }
 
-    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="downsample-factor-sweep")
+    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="vocab-size-sweep")
 
     wandb.agent(sweep_id, function=functools.partial(train_multiple, cfg=cfg))
 

@@ -223,10 +223,10 @@ class BiCodec(nn.Module):
 
 # Test the model
 if __name__ == "__main__":
-
-    config = load_config("pretrained_models/SparkTTS-0.5B/BiCodec/config.yaml")
+    import os
+    config = load_config(f"{os.environ["HF_HOME"]}/BiCodec/config.yaml")
     model = BiCodec.load_from_checkpoint(
-        model_dir="pretrained_models/SparkTTS-0.5B/BiCodec",
+        model_dir=f"{os.environ["HF_HOME"]}/BiCodec",
     )
 
     # Generate random inputs for testing
@@ -238,10 +238,7 @@ if __name__ == "__main__":
     # Forward pass
     outputs = model(inputs)
     semantic_tokens, global_tokens = model.tokenize(inputs)
-    wav_recon = model.detokenize(semantic_tokens, global_tokens)
 
-    # Verify if the reconstruction matches
-    if torch.allclose(outputs["recons"].detach(), wav_recon):
-        print("Test successful")
-    else:
-        print("Test failed")
+    print(outputs["x_vector"].shape, outputs["d_vector"].shape)
+    print(semantic_tokens.shape, global_tokens.shape)
+

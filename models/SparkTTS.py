@@ -73,63 +73,6 @@ class SparkTTS:
         
         self.audio_tokenizer = BiCodecTokenizer(self.model_dir, device=self.device)
 
-    def process_prompt(
-        self,
-        text: str,
-        prompt_speech_path: Path,
-        prompt_text: str = None,
-    ) -> Tuple[str, torch.Tensor]:
-        """
-        Process input for voice cloning.
-
-        Args:
-            text (str): The text input to be converted to speech.
-            prompt_speech_path (Path): Path to the audio file used as a prompt.
-            prompt_text (str, optional): Transcript of the prompt audio.
-
-        Return:
-            Tuple[str, torch.Tensor]: Input prompt; global tokens
-        """
-
-        global_token_ids, semantic_token_ids = self.audio_tokenizer.tokenize(
-            prompt_speech_path
-        )
-        global_tokens = "".join(
-            [f"<|bicodec_global_{i}|>" for i in global_token_ids.squeeze()]
-        )
-
-        # Prepare the input tokens for the model
-        if prompt_text is not None:
-            semantic_tokens = "".join(
-                [f"<|bicodec_semantic_{i}|>" for i in semantic_token_ids.squeeze()]
-            )
-            inputs = [
-                TASK_TOKEN_MAP["tts"],
-                "<|start_content|>",
-                prompt_text,
-                text,
-                "<|end_content|>",
-                "<|start_global_token|>",
-                global_tokens,
-                "<|end_global_token|>",
-                "<|start_semantic_token|>",
-                semantic_tokens,
-            ]
-        else:
-            inputs = [
-                TASK_TOKEN_MAP["tts"],
-                "<|start_content|>",
-                text,
-                "<|end_content|>",
-                "<|start_global_token|>",
-                global_tokens,
-                "<|end_global_token|>",
-            ]
-
-        inputs = "".join(inputs)
-
-        return inputs, global_token_ids
-
     def process_prompt_control(
         self,
         gender: str,
@@ -177,15 +120,13 @@ class SparkTTS:
 
         return "".join(control_tts_inputs)
 
-    @torch.no_grad()
-    def inference(
+
+    def forward(
         self,
         input_texts: list[str],
-        prompt_speech_path: Path = None,
-        prompt_text: str = None,
-        gender: str = None,
-        pitch: str = None,
-        speed: str = None,
+        gender: str,
+        pitch: str,
+        speed: str,
         temperature: float = 0.8,
         top_k: float = 50,
         top_p: float = 0.95,
@@ -258,3 +199,11 @@ class SparkTTS:
         ) for g_ids, p_ids in zip(global_token_ids, pred_semantic_ids)]
 
         return wavs
+
+if __name__ == "__main__":
+    import os
+    import torchinfo
+    model_dir = Path(os.environ["HF_HOME"])
+    sparktts = SparkTTS(model_dir, load_in_4bit=True)
+    
+    torchinfo.summary(sparktts)

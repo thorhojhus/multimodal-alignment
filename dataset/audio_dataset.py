@@ -114,7 +114,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
         conversation_alt = self._format_chat(text, text)
-        
+
         # tokenize conversation with special handling for audio token
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
@@ -291,7 +291,7 @@ def collate_fn(batch, tokenizer, T):
         "alt_input_ids": alt_input_ids,
         "alt_labels": alt_labels,
         "alt_attention_mask": alt_attention_mask,
-        "text_ids": text_ids
+        "text_ids": text_ids,
     }
 
 if __name__ == "__main__":

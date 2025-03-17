@@ -15,7 +15,6 @@ from models.encoders import EncoderWrapper
 from models.UltravoxProjector import Projector
 from models.LinearProjector import LinearProjector
 from models.tinyalign import BridgeFormer
-from models.SparkTTS import SparkTTS
 
 
 class AudioLLMModel(nn.Module):
@@ -37,8 +36,6 @@ class AudioLLMModel(nn.Module):
         if self.tokenizer.pad_token == self.tokenizer.eos_token:
             self.tokenizer.pad_token = self.tokenizer.unk_token
         self.pad_token_id = self.tokenizer.pad_token_id
-
-        self.sparktts_head = self._setup_sparktts_wrapmodel() if config.model.use_sparktts else None
 
         self.alpha = 1.0
         self.beta = 1.0
@@ -89,14 +86,6 @@ class AudioLLMModel(nn.Module):
         for param in lm.parameters():
             param.requires_grad = False
         return lm
-
-    def _setup_sparktts_wrapmodel(self) -> SparkTTS:
-        sparktts_wrap = SparkTTS(os.environ["HF_HOME"], self.config.model.load_in_4bit)
-
-        for param in sparktts_wrap.model.parameters():
-            param.requires_grad = False
-
-        return sparktts_wrap
 
     def _create_projector(self, type: Literal["simple", "tinyalign"]) -> Projector:
         # get dimensions for projector
@@ -199,14 +188,21 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, **kwargs
+        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, trunced_text_ids: Optional[Tensor] = None,
+        audio_wavs: Optional[Tensor] = None, **kwargs
     ) -> Any:
         
         # If embed_loss (TinyAlign) is used:
         if self.config.training.loss=="embed_loss":
-            text_embeddings = self.lm.get_input_embeddings()(text_ids)
+            text_embeddings = self.lm.get_input_embeddings()(trunced_text_ids)
             audio_embeddings = self._process_audio_features(audio_features)
             return self.embed_loss(audio_embeddings, text_embeddings)
+
+        # calculate audio reconstruction loss if specified
+        if self.config.training.loss == "wav_loss":
+            output_wavs = self.generate_tts(self.tokenizer.batch_decode(text_ids, skip_special_tokens=True))
+            return self._audio_reconstruction_loss(audio_wavs, output_wavs, "L1")
+
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
@@ -234,11 +230,13 @@ class AudioLLMModel(nn.Module):
             )
         
         # forward pass through language model (cross-entropy loss)
-        return self.lm(
+        llm_output = self.lm(
                 inputs_embeds=combined_embeds,
                 attention_mask=combined_attention_mask,
                 labels=combined_labels
             )
+        
+        return llm_output
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
@@ -269,28 +267,17 @@ class AudioLLMModel(nn.Module):
             attention_mask=combined_attention_mask,
             **generation_config
         )
-    
-    def generate_tts(
-        self, input_text: str
-    ) -> Tensor:
-            """Return an output tensor from the SparkTTS model inference"""
-            transcription = self.sparktts_head.inference(
-                input_text ,
-                gender="male",
-                speed="moderate",
-                pitch="moderate",
-            ) # default values for inference; if gender is not specified, it breaks.
-            return transcription
 
-    def audio_reconstruction_loss(self, in_audio_wav: Tensor, out_audio_wav: Tensor, loss_type: typing.Literal["MAE", "MSE"]) -> Tensor:
+    def _audio_reconstruction_loss(self, in_audio_wav: Tensor, out_audio_wav: Tensor, loss_type: typing.Literal["L1", "L2"]) -> Tensor:
         """Reconstruction loss for audio."""
 
-        if loss_type == "MAE":
-            return F.l1_loss(in_audio_wav, out_audio_wav)
-        elif loss_type == "MSE":
-            return F.mse_loss(in_audio_wav, out_audio_wav)
+        if loss_type == "L1":
+            loss = F.l1_loss(in_audio_wav, out_audio_wav)
+        elif loss_type == "L2":
+            loss = F.mse_loss(in_audio_wav, out_audio_wav)
         else:
             raise NotImplementedError(f"Loss type {loss_type} not implemented.")
+        return SimpleNamespace(loss=loss)
 
     def _compute_kl_loss(
         self,

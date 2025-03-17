@@ -153,16 +153,16 @@ class BiCodecTokenizer:
 
 # test
 if __name__ == "__main__":
-    import soundfile as sf
+    import os
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = BiCodecTokenizer(
-        model_dir="pretrained_models/Spark-TTS-0.5B",
+        model_dir=os.environ["HF_HOME"],
         device=device,
     )
-    wav_path = "example/prompt_audio.wav"
+    wav_path = "tts-wavs/output_1.wav"
 
     global_tokens, semantic_tokens = tokenizer.tokenize(wav_path)
 
-    wav_rec = tokenizer.detokenize(global_tokens.squeeze(0), semantic_tokens)
-    sf.write("example/prompt_recon.wav", wav_rec, 16000)
+    #wav_rec = tokenizer.detokenize(global_tokens.squeeze(0), semantic_tokens)
+    #sf.write("example/prompt_recon.wav", wav_rec, 16000)

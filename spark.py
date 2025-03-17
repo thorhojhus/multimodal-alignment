@@ -1,16 +1,53 @@
+import functools
 import os
 import torchaudio
 from models.SparkTTS import SparkTTS
-
-model_wrap = SparkTTS(os.environ["HF_HOME"], True, "cuda")
-
-output_wavs = model_wrap.inference(
-    ["Hello, this is a test sentence. I am testing the SparkTTS model", "This is another test sentence", "And right here is a danish sentence. Jeg elsker at spise is!"],
-    gender="male",
-    speed="moderate",
-    pitch="moderate"
+from pathlib import Path
+import hydra
+from omegaconf import DictConfig
+from transformers import AutoProcessor
+import torch
+from torch.utils.data import DataLoader
+from peft import inject_adapter_in_model, LoraConfig
+from dataset.audio_dataset import AudioChatDataset, collate_fn
+from models.audio_llm import AudioLLMModel
+from utils import (
+    load_checkpoint,
+    print_parameter_count,
+    run_evaluation,
+    save_checkpoint,
+    calculate_eval_loss,
+    run_evaluation_with_loss
 )
-print("done, saving now ...")
 
-for i, wav in enumerate(output_wavs):
-    torchaudio.save(f"tts-wavs/output_{i}.wav", wav.unsqueeze(0), 16000)
+@hydra.main(version_base="1.2", config_path="configs", config_name="config")
+def main(cfg: DictConfig):
+    # Load models
+    model = AudioLLMModel(cfg)
+
+    model_wrap = SparkTTS(os.environ["HF_HOME"], True, "cuda")
+    for param in model_wrap.model.parameters():
+        param.requires_grad = False
+    model_wrap.model.eval()
+
+    processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+    dataset = AudioChatDataset(
+        lm_model="google/gemma-2-2b-it",
+        dataset="librispeech",
+        processor=processor,
+        tokenizer=model.tokenizer,
+    )
+
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=4, 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
+        shuffle=False,
+    )
+
+    for batch in dataloader:
+        print(batch)
+        break
+
+if __name__ == "__main__":
+    main()
