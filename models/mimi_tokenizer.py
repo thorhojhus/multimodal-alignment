@@ -27,7 +27,7 @@ class MimiTokenizer(nn.Module):
         embed_dim: int = 512,
         dtype: torch.dtype = torch.bfloat16,
         device: Optional[torch.device] = None,
-        use_hierarchical: bool = True
+        use_hierarchical: bool = False
     ):
         super().__init__()
         
