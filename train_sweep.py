@@ -34,7 +34,7 @@ def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
         setup_wandb(cfg)
     OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
-    
+    wandb.run.name = f"downsample-factor-sweep ({wandb.config['downsample_factor']})"
     model = AudioLLMModel(cfg)
 
     # freeze non-trainable components
@@ -256,7 +256,7 @@ def main(cfg: DictConfig):
         "method": "random",
         "metric": {"name": "eval/loss", "goal": "minimize"},
         "parameters": {
-            "downsample_factor": {"min": 1, "max": 50}
+            "downsample_factor": {"values": [2, 5, 8, 10, 12, 15, 20, 25, 35, 50]}
         }
     }
 

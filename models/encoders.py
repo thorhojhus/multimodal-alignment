@@ -3,6 +3,7 @@ from transformers import AutoModel
 from transformers import WhisperModel
 from transformers import ClapModel
 from transformers import Wav2Vec2Model, Wav2Vec2BertModel
+from transformers import MimiModel
 from enum import Enum
 
 
@@ -14,6 +15,7 @@ class EncoderEnum(Enum):
     CLAP = "laion/clap-htsat-unfused"
     WAV2VEC = "facebook/wav2vec2-base-960h"
     WAV2VECBERT = "facebook/w2v-bert-2.0"
+    MIMI = "kyutai/mimi"
 
 class EncoderWrapper(AutoModel):
     """As the different audio encoders have different configs, and different input types, wrap the encoders"""
@@ -54,6 +56,13 @@ class EncoderWrapper(AutoModel):
                     torch_dtype=torch.bfloat16,
                     device_map=None
                 ).to("cuda")
+            case EncoderEnum.MIMI:
+                encoder = MimiModel.from_pretrained(
+                    self.encoder_type.value,
+                    attn_implementation="flash_attention_2",
+                    torch_dtype=torch.bfloat16,
+                    device_map="cuda"
+                )
 
         # freeze encoder params
         for param in encoder.parameters():
@@ -71,6 +80,9 @@ class EncoderWrapper(AutoModel):
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
             case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
                 return self.audio_encoder.config.hidden_size
+            case EncoderEnum.MIMI:
+                # For Mimi, no projection dimension needed as we handle the tokens directly with MimiTokenizer
+                return 32  # Number of codebooks in Mimi
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
@@ -81,6 +93,10 @@ class EncoderWrapper(AutoModel):
                 B, D, _, _ = audio_encoded.size()
                 return audio_encoded.permute(0, 2, 3, 1).reshape(B, -1, D)
             case EncoderEnum.WAV2VEC | EncoderEnum.WAV2VECBERT:
+                return audio_encoded
+            case EncoderEnum.MIMI:
+                # Mimi encoder outputs audio codes in shape [batch_size, 32, seq_len]
+                # No transformation needed as MimiTokenizer handles this shape directly
                 return audio_encoded
 
     def __call__(self, *args, **kwargs):

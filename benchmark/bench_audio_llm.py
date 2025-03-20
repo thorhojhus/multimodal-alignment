@@ -25,6 +25,8 @@ config = SimpleNamespace(
         encoder_model_name="syvai/hviske-v2",
         downsample_factor=10,
         load_in_4bit=True,
+        audio_tokenizer=False,
+        projector="simple"
     ),
     training=SimpleNamespace(kl_loss=True),
 )
@@ -137,7 +139,7 @@ processor = AutoProcessor.from_pretrained("syvai/hviske-v2")
 # Create test dataset and dataloader
 test_dataset = AudioChatDataset(
     lm_model="google/gemma-2-9b-it",
-    dataset="coral",
+    dataset="melatech",
     tokenizer=tokenizer,
     processor=processor,
     split="test",
