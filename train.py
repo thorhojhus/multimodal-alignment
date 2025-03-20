@@ -85,7 +85,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, pad=cfg.training.do_ctx_utilization), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, pad=not cfg.training.do_ctx_utilization), 
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
