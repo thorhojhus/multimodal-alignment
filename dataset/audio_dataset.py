@@ -3,7 +3,7 @@ import torchaudio
 from torch import Tensor
 from transformers import AutoProcessor, AutoTokenizer
 from transformers import BatchFeature
-
+from datasets import Audio
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE, GEMMA_3
 
 
@@ -16,17 +16,49 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  T=30):
         self.lm_model_name = lm_model
         self.dataset_name = dataset
-        if dataset == "coral":
-            from dataset.load_coral import coral_dataset_dict
-            self.dataset = coral_dataset_dict[split.split(".")[0]]
-        elif dataset == "librispeech":
-            from dataset.load_librispeech import librispeech_dataset_dict
-            self.dataset = librispeech_dataset_dict[str(split)]
-        elif dataset == "cv_arabic":
-            from dataset.common_voice_ar import common_voice_ar_dataset_dict
-            self.dataset = common_voice_ar_dataset_dict[split]
+        
+        # Handle multiple datasets separated by commas
+        if "," in dataset:
+            datasets = []
+            dataset_names = dataset.split(",")
+            loaded_dataset_names = []
+            
+            for dataset_name in dataset_names:
+                dataset_name = dataset_name.strip()
+                loaded_dataset = self._load_single_dataset(dataset_name, split)
+                if loaded_dataset is not None:
+                    datasets.append(loaded_dataset)
+                    loaded_dataset_names.append(dataset_name)
+                else:
+                    print(f"WARNING: Failed to load dataset: {dataset_name}")
+            
+            if not datasets:
+                raise ValueError(f"No valid datasets found in: {dataset}")
+                
+            from datasets import concatenate_datasets
+            import random
+            
+            # Keep only essential fields (audio and text) before concatenation
+            simplified_datasets = []
+            for ds in datasets:
+                # Create new dataset with only audio and text columns
+                simplified_ds = ds.select_columns(['audio', 'text'])
+
+                simplified_datasets.append(simplified_ds)
+                
+            # Concatenate all simplified datasets and shuffle
+            self.dataset = concatenate_datasets(simplified_datasets)
+            # Shuffle the dataset
+            indices = list(range(len(self.dataset)))
+            self.dataset = self.dataset.select(random.shuffle(indices))
+            
         else:
-            print("Unsupported dataset")
+            # Single dataset
+            self.dataset = self._load_single_dataset(dataset, split)
+            if self.dataset is None:
+                raise ValueError(f"Failed to load dataset: {dataset}")
+            print(f"Loaded dataset {dataset} with {len(self.dataset)} samples")
+            
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
         self.tokenizer = tokenizer
@@ -35,6 +67,33 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
+    
+    def _load_single_dataset(self, dataset_name, split):
+        """Helper function to load a single dataset"""
+        try:
+            split_key = split.split(".")[0]  # Handle LibriSpeech style splits
+            
+            if dataset_name == "coral":
+                from dataset.load_coral import coral_dataset_dict
+                return coral_dataset_dict[split_key].cast_column("audio", Audio(sampling_rate=16000))
+            elif dataset_name == "librispeech":
+                from dataset.load_librispeech import librispeech_dataset_dict
+                return librispeech_dataset_dict[str(split)].cast_column("audio", Audio(sampling_rate=16000))
+            elif dataset_name == "cv_arabic":
+                from dataset.common_voice_ar import common_voice_ar_dataset_dict
+                return common_voice_ar_dataset_dict[split_key]
+            elif dataset_name == "melatech":
+                from dataset.load_melatech import melatech_dataset_dict
+                return melatech_dataset_dict[split_key].cast_column("audio", Audio(sampling_rate=16000))
+            else:
+                print(f"Unsupported dataset: {dataset_name}")
+                return None
+        except KeyError as e:
+            print(f"Error loading dataset {dataset_name} with split {split}: Split not found - {e}")
+            return None
+        except Exception as e:
+            print(f"Error loading dataset {dataset_name} with split {split}: {e}")
+            return None
 
     def __len__(self):
         return len(self.dataset)
@@ -117,8 +176,18 @@ class AudioChatDataset(torch.utils.data.Dataset):
         example = self.dataset[idx]
         audio = example["audio"]
         text = example["text"].lower()
-        audio_array = torch.tensor(audio["array"], dtype=torch.float32)
-        audio_sampling_rate = audio["sampling_rate"]
+        # Handle potential missing fields in simplified datasets
+        if isinstance(audio, dict) and "array" in audio and "sampling_rate" in audio:
+            audio_array = torch.tensor(audio["array"], dtype=torch.float32)
+            audio_sampling_rate = audio["sampling_rate"]
+        else:
+            # For compatibility with datasets that might have a different structure
+            print(f"Warning: Unexpected audio format: {type(audio)}")
+            if hasattr(audio, "numpy"):
+                audio_array = torch.tensor(audio.numpy(), dtype=torch.float32)
+                audio_sampling_rate = 16000  # Default to 16kHz if not specified
+            else:
+                raise ValueError(f"Unsupported audio format: {type(audio)}")
         audio_features = self._audio_to_features(audio_array, audio_sampling_rate)
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
