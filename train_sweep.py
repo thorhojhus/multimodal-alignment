@@ -256,7 +256,7 @@ def main(cfg: DictConfig):
         "method": "random",
         "metric": {"name": "eval/loss", "goal": "minimize"},
         "parameters": {
-            "downsample_factor": {"min": 1, "max": 50}
+            "downsample_factor": {"values": [2, 5, 8, 10, 12, 15, 20, 25, 35, 50]}
         }
     }
 
