@@ -7,7 +7,7 @@
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 04:00
+#BSUB -W 02:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
@@ -29,5 +29,4 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=HuggingFaceTB/SmolLM2-1.7B-Instruct model.encoder_model_name=laion/clap-htsat-unfused model.downsample_factor=1 training.batch_size=32 wandb.enabled=true
-#python train.py
+python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=16 model.load_in_4bit=true wandb.enabled=true wandb.run_name=test-normal-train-no-combine training.num_epochs=2 dataset.name=coral

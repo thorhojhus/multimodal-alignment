@@ -240,6 +240,7 @@ class AudioLLMModel(nn.Module):
         
         # If embed_loss (TinyAlign) is used:
         if self.config.training.loss=="embed_loss":
+            assert not config.training.do_ctx_utilization # not compatible right now
             text_embeddings = self.lm.get_input_embeddings()(text_ids)
             audio_embeddings = self._process_audio_features(audio_features)
             return self.embed_loss(audio_embeddings, text_embeddings)

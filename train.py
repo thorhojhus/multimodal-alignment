@@ -80,7 +80,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, no_pad=cfg.training.do_ctx_utilization), 
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
@@ -115,7 +115,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
-            input_ids = batch["input_ids"].to("cuda", non_blocking=True)
+            insertion_indices = batch["insertion_indices"]
             if isinstance(batch["audio_features"], dict):
                 # for wav2vec-bert/seamless models
                 audio_features = {
@@ -125,13 +125,36 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             else:
                 # for other models (Whisper, CLAP, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
-            labels = batch["labels"].to("cuda", non_blocking=True)
-            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
-            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
-            alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
-            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
-            insertion_indices = batch["insertion_indices"]
-            text_ids = batch["text_ids"].to("cuda", non_blocking=True)
+            
+            # If we combine in a single context window, load differently
+            if cfg.training.do_ctx_utilization:
+                input_ids = [x.to("cuda", non_blocking=True) for x in batch["input_ids"]]
+                labels = [x.to("cuda", non_blocking=True) for x in batch["labels"]]
+                attention_mask = [x.to("cuda", non_blocking=True) for x in batch["attention_mask"]]
+                insertion_indices[0] = insertion_indices[0].item()
+                for i in range(1, len(insertion_indices)):
+                    insertion_indices[i] = insertion_indices[i].item() + torch.numel(torch.cat((*input_ids[:i],)))
+                
+                input_ids = torch.cat((*input_ids,)).to("cuda", non_blocking=True)
+                attention_mask = torch.cat((*attention_mask,)).to("cuda", non_blocking=True)
+                labels = torch.cat((*labels,)).to("cuda", non_blocking=True)
+                text_ids = None
+            else:
+                input_ids = batch["input_ids"].to("cuda", non_blocking=True)
+                labels = batch["labels"].to("cuda", non_blocking=True)
+                attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+                text_ids = batch["text_ids"].to("cuda", non_blocking=True)
+
+            alt_input_ids, alt_attention_mask, alt_labels = None, None, None
+            if cfg.training.loss == "kl_loss":
+                if cfg.training.do_ctx_utilization:
+                    alt_input_ids = torch.cat((*batch["alt_input_ids"],)).to("cuda", non_blocking=True)
+                    alt_attention_mask = torch.cat((*batch["alt_attention_mask"],)).to("cuda", non_blocking=True)
+                    alt_labels = torch.cat((*batch["alt_labels"],)).to("cuda", non_blocking=True)
+                else:
+                    alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+                    alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
+                    alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
             
             # forward pass
             outputs = model(
@@ -143,7 +166,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 alt_attention_mask=alt_attention_mask,
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
-                text_ids=text_ids
+                text_ids=text_ids,
+                combined=cfg.training.do_ctx_utilization
             )
 
             # backward pass
