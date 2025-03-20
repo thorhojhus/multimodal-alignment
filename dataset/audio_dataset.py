@@ -47,11 +47,11 @@ class AudioChatDataset(torch.utils.data.Dataset):
 
                 simplified_datasets.append(simplified_ds)
                 
-            # Concatenate all simplified datasets and shuffle
+            # concat and shuffle datasets
             self.dataset = concatenate_datasets(simplified_datasets)
-            # Shuffle the dataset
             indices = list(range(len(self.dataset)))
-            self.dataset = self.dataset.select(random.shuffle(indices))
+            random.shuffle(indices)
+            self.dataset = self.dataset.select(indices)
             
         else:
             # Single dataset
