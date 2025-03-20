@@ -27,7 +27,7 @@ class MimiTokenizer(nn.Module):
         embed_dim: int = 512,
         dtype: torch.dtype = torch.bfloat16,
         device: Optional[torch.device] = None,
-        use_hierarchical: bool = False
+        use_hierarchical: bool = True
     ):
         super().__init__()
         
@@ -141,6 +141,9 @@ if __name__ == "__main__":
     print(f"Output dtype: {embeds.dtype}")      # Expected: torch.bfloat16
     print(f"Output device: {embeds.device}")    # Expected: cuda:0
     
+    # Time both approaches
+    import time
+    
     # Try with non-hierarchical approach
     tokenizer_nh = MimiTokenizer(
         vocab_size=2048,
@@ -148,5 +151,49 @@ if __name__ == "__main__":
         use_hierarchical=False
     )
     
+    # Warm-up
+    for _ in range(5):
+        _ = tokenizer_nh(input_codes)
+    
+    # Timing
+    torch.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(100):
+        _ = tokenizer_nh(input_codes)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    
+    nh_time = (end_time - start_time) / 100
     embeds_nh = tokenizer_nh(input_codes)
     print(f"\nNon-hierarchical output shape: {embeds_nh.shape}")  # Expected: [2, 74, 512]
+    print(f"Non-hierarchical average time: {nh_time*1000:.3f} ms")
+
+    # Try with hierarchical approach
+    tokenizer_h = MimiTokenizer(
+        vocab_size=2048,
+        embed_dim=512,
+        use_hierarchical=True
+    )
+    
+    # Warm-up
+    for _ in range(5):
+        _ = tokenizer_h(input_codes)
+    
+    # Timing
+    torch.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(100):
+        _ = tokenizer_h(input_codes)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    
+    h_time = (end_time - start_time) / 100
+    embeds_h = tokenizer_h(input_codes)
+    print(f"\nHierarchical output shape: {embeds_h.shape}")  # Expected: [2, 74, 512]
+    print(f"Hierarchical average time: {h_time*1000:.3f} ms")
+    
+    # Compare performance
+    speedup = nh_time / h_time if h_time < nh_time else -h_time / nh_time
+    faster = "hierarchical" if h_time < nh_time else "non-hierarchical"
+    
+    print(f"\nThe {faster} approach is {abs(speedup):.2f}x {'faster' if speedup > 0 else 'slower'}")
