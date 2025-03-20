@@ -263,10 +263,10 @@ def prepare_inputs(
     input_ids: Tensor |list,
     labels: Tensor | list, 
     tokenizer, 
-    no_pad: bool = False
+    pad: bool = False
 ) -> tuple[Tensor, Tensor, Tensor, list[Tensor]]:
     # prepare input tensors for model
-    attention_mask = torch.ones_like(input_ids) if not no_pad else [torch.ones_like(row) for row in input_ids]  # NOTE: This does mask out padding correctly right now.
+    attention_mask = torch.ones_like(input_ids) if pad else [torch.ones_like(row) for row in input_ids]  # NOTE: This does mask out padding correctly right now.
 
     audio_token_id = tokenizer.convert_tokens_to_ids("<|audio|>")
 
@@ -278,7 +278,7 @@ def prepare_inputs(
     new_labels = [labels[i][pos] for i, pos in enumerate(valid_positions)]
     new_attention_mask = [attention_mask[i][pos] for i, pos in enumerate(valid_positions)]
 
-    if not no_pad:
+    if pad:
         new_input_ids = torch.nn.utils.rnn.pad_sequence(new_input_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
         new_labels = torch.nn.utils.rnn.pad_sequence(new_labels, batch_first=True, padding_value=-100)
         new_attention_mask = torch.nn.utils.rnn.pad_sequence(new_attention_mask, batch_first=True, padding_value=0)
@@ -286,7 +286,7 @@ def prepare_inputs(
     return new_input_ids, new_attention_mask, new_labels, audio_positions
 
 
-def collate_fn(batch, tokenizer: AutoTokenizer, T: int, no_pad: bool = False):
+def collate_fn(batch, tokenizer: AutoTokenizer, T: int, pad: bool = True):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
@@ -300,7 +300,7 @@ def collate_fn(batch, tokenizer: AutoTokenizer, T: int, no_pad: bool = False):
     alt_attention_mask = []
     
     for item in batch:
-        if not no_pad:
+        if pad:
             # pad input_ids and labels
             pad_len = max_len - len(item["input_ids"])
             alt_pad_len = max_len_pad - len(item["alt_input_ids"])
@@ -323,7 +323,7 @@ def collate_fn(batch, tokenizer: AutoTokenizer, T: int, no_pad: bool = False):
                 pad_len = T - len(item["text_ids"])      # or pad as described in TinyAlign
                 ids = torch.nn.functional.pad(item["text_ids"], (0, pad_len), value=tokenizer.pad_token_id)
             text_ids.append(ids)
-        else:
+        else: # otherwise we just make it a list of unpadded tensors
             input_ids.append(item["input_ids"])
             labels.append(item["labels"])
             alt_input_ids.append(item["alt_input_ids"])
@@ -333,7 +333,7 @@ def collate_fn(batch, tokenizer: AutoTokenizer, T: int, no_pad: bool = False):
 
         audio_features.append(item["audio_features"])
 
-    if not no_pad:
+    if pad:
         text_ids = torch.stack(text_ids)
         input_ids = torch.stack(input_ids)
         labels = torch.stack(labels)
@@ -419,11 +419,11 @@ def collate_fn(batch, tokenizer: AutoTokenizer, T: int, no_pad: bool = False):
         else:
             # for spectrogram-based models (Whisper, CLAP)
             audio_features = torch.stack(audio_features)
-    else:
+    else: # otherwise just stack audio features (currently not tested for all encoders)
         audio_features=torch.stack(audio_features)
 
     prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
-        input_ids, labels, tokenizer, no_pad=no_pad
+        input_ids, labels, tokenizer, pad=pad
     )
 
     return {

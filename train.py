@@ -85,7 +85,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, no_pad=cfg.training.do_ctx_utilization), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, pad=cfg.training.do_ctx_utilization), 
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
@@ -141,7 +141,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             
             # If we combine in a single context window, load differently
-            if cfg.training.do_ctx_utilization:
+            if cfg.training.do_ctx_utilization: # if we combine in a single context window, prepare as single tensors for some of them
                 input_ids = [x.to("cuda", non_blocking=True) for x in batch["input_ids"]]
                 labels = [x.to("cuda", non_blocking=True) for x in batch["labels"]]
                 attention_mask = [x.to("cuda", non_blocking=True) for x in batch["attention_mask"]]
@@ -161,7 +161,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
             alt_input_ids, alt_attention_mask, alt_labels = None, None, None
             if cfg.training.loss == "kl_loss":
-                if cfg.training.do_ctx_utilization:
+                if cfg.training.do_ctx_utilization: # if we combine in a single context window, prepare as a single tensor
                     alt_input_ids = torch.cat((*batch["alt_input_ids"],)).to("cuda", non_blocking=True)
                     alt_attention_mask = torch.cat((*batch["alt_attention_mask"],)).to("cuda", non_blocking=True)
                     alt_labels = torch.cat((*batch["alt_labels"],)).to("cuda", non_blocking=True)
@@ -181,7 +181,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 attention_mask=attention_mask,
                 insertion_indices=insertion_indices,
                 text_ids=text_ids,
-                combined=cfg.training.do_ctx_utilization
+                combined=cfg.training.do_ctx_utilization  # uf the input is combined in the context window
             )
 
             # backward pass

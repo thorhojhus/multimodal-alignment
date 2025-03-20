@@ -28,7 +28,7 @@ def main(cfg):
     dataloader = DataLoader(
         dataset, 
         batch_size=3, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, no_pad=cfg.training.do_ctx_utilization), 
+        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T, pad=cfg.training.do_ctx_utilization), 
         shuffle=True,
         num_workers=0
     )
