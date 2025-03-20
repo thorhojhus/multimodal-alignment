@@ -115,14 +115,14 @@ class AudioLLMModel(nn.Module):
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
     
-    def _combine_embeddings(
+    def _combine_embeddings_batched(
         self, text_embeds: Tensor, audio_embeds: Tensor, 
         insertion_indices: List[Tensor], labels: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
-        B, D, _ = audio_embeds.shape
+        B, D, *_ = audio_embeds.shape 
 
         for i in range(B):
             embeds = text_embeds[i]
@@ -155,6 +155,55 @@ class AudioLLMModel(nn.Module):
 
         return combined_embeds_list, combined_labels_list, combined_attention_mask_list
 
+    def _combine_embeddings(
+        self, text_embeds: Tensor, audio_embeds: Tensor, 
+        insertion_indices: List[Tensor], labels: Optional[Tensor] = None,
+        attention_mask: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        # combine text and audio embeddings for each sample into a single sample
+        # Utilizes more of the context window in the LLM
+        combined_embeds = None
+        combined_labels = None
+        combined_attention_mask = None
+
+        B, D, _ = audio_embeds.shape
+
+        for i in range(B):
+
+            idx = insertion_indices[i]
+            # insert audio embeddings at specified position
+            combined_embeds = torch.cat([text_embeds[:idx], audio_embeds[i], text_embeds[idx:]], dim=0)
+
+            if labels is not None:
+                # mark audio positions with -100 in labels
+                audio_labels = torch.full((D,), -100, dtype=labels.dtype, device=labels.device)
+                combined_labels = torch.cat([labels[:idx], audio_labels, labels[idx:]], dim=0)
+
+            if attention_mask is not None:
+                # set attention mask for audio embeddings
+                audio_mask = torch.ones(D, dtype=attention_mask.dtype, device=attention_mask.device)
+                combined_attention_mask = torch.cat([attention_mask[:idx], audio_mask, attention_mask[idx:]], dim=0)
+
+        return combined_embeds, combined_labels, combined_attention_mask
+
+    def _pad_sequences(
+        self, combined_lists: Tuple[List[Tensor], List[Tensor], List[Tensor]]
+    ) -> Tuple[Tensor, Optional[Tensor], Optional[Tensor]]:
+        # pad sequences to uniform length
+        embeds_list, labels_list, attention_mask_list = combined_lists
+        combined_embeds = torch.nn.utils.rnn.pad_sequence(embeds_list, batch_first=True, padding_value=0)
+        
+        combined_labels = None
+        if labels_list:
+            combined_labels = torch.nn.utils.rnn.pad_sequence(labels_list, batch_first=True, padding_value=-100)
+            
+        combined_attention_mask = None
+        if attention_mask_list:
+            combined_attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
+            
+            
+        return combined_embeds, combined_labels, combined_attention_mask
+
     def _pad_sequences(
         self, combined_lists: Tuple[List[Tensor], List[Tensor], List[Tensor]]
     ) -> Tuple[Tensor, Optional[Tensor], Optional[Tensor]]:
@@ -185,7 +234,8 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, **kwargs
+        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None,
+        combined: bool = False, **kwargs
     ) -> Any:
         
         # If embed_loss (TinyAlign) is used:
@@ -196,35 +246,48 @@ class AudioLLMModel(nn.Module):
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
-
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
-        combined_lists = self._combine_embeddings(
-            text_embeds, audio_embeds, insertion_indices, labels, attention_mask
-        )
-        combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
+        if combined:
+            combined_embeds, combined_labels, combined_attention_mask = self._combine_embeddings(
+                text_embeds, audio_embeds, insertion_indices, labels, attention_mask
+            )
+        else:
+            combined_lists = self._combine_embeddings_batched(
+                text_embeds, audio_embeds, insertion_indices, labels, attention_mask
+            )
+            combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
 
         # calculate KL loss if specified
         if self.config.training.loss == "kl_loss":
-            lm_output = self.lm.forward(
-                inputs_embeds=combined_embeds,
-                attention_mask=combined_attention_mask,
-            )
-            return self._compute_kl_loss(
-                lm_output=lm_output, 
-                labels=combined_labels, 
-                alt_input_ids=alt_input_ids, 
-                alt_attention_mask=alt_attention_mask,
-                alt_labels=alt_labels
-            )
+            if combined:
+                # we need to "batch" it by adding the batch dimension D = 1
+                lm_output = self.lm.forward(
+                    inputs_embeds=combined_embeds.unsqueeze(0),
+                    attention_mask=combined_attention_mask.unsqueeze(0),
+                )
+                
+                return self._compute_kl_loss(lm_output=lm_output, labels=combined_labels.unsqueeze(0), alt_input_ids=alt_input_ids.unsqueeze(0), alt_attention_mask=alt_attention_mask.unsqueeze(0), alt_labels=alt_labels.unsqueeze(0))
+            else:
+                lm_output = self.lm.forward(
+                    inputs_embeds=combined_embeds,
+                    attention_mask=combined_attention_mask,
+                )
+                return self._compute_kl_loss(
+                    lm_output=lm_output, 
+                    labels=combined_labels, 
+                    alt_input_ids=alt_input_ids, 
+                    alt_attention_mask=alt_attention_mask,
+                    alt_labels=alt_labels
+                )
         
         # forward pass through language model (cross-entropy loss)
         return self.lm(
-                inputs_embeds=combined_embeds,
-                attention_mask=combined_attention_mask,
-                labels=combined_labels
-            )
+            inputs_embeds=combined_embeds.unsqueeze(0) if combined else combined_embeds,
+            attention_mask=combined_attention_mask.unsqueeze(0) if combined else combined_attention_mask,
+            labels=combined_labels.unsqueeze(0) if combined else combined_labels,
+        )
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
@@ -238,7 +301,7 @@ class AudioLLMModel(nn.Module):
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
-        combined_lists = self._combine_embeddings(
+        combined_lists = self._combine_embeddings_batched(
             text_embeds, audio_embeds, insertion_indices, attention_mask=attention_mask
         )
         combined_embeds, _, combined_attention_mask = self._pad_sequences(combined_lists)
@@ -309,7 +372,3 @@ if __name__ == "__main__":
     labels = input_ids.clone()
 
     outs = model.forward(input_ids, audio_features, attention_mask, labels)
-    #gens = model.generate(input_ids, audio_features, attention_mask, max_new_tokens=100)
-
-    print(outs)
-    #print(gens)
