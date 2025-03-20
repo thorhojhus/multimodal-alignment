@@ -45,7 +45,8 @@ class AudioLLMModel(nn.Module):
         from models.mimi_tokenizer import MimiTokenizer
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return MimiTokenizer(vocab_size=2048, 
-                                     embed_dim=embed_dim)
+                                     embed_dim=embed_dim,
+                                     use_hierarchical=self.config.model.get('use_hierarchical', True))
 
     def _create_audio_tokenizer(self):
         from models.audio_tokenizer import AudioTokenizer

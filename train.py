@@ -45,9 +45,12 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     best_eval_loss = float('inf')
 
     # create dataset and processor
-    if ("w2v-bert" in cfg.model.encoder_model_name) or ("mimi" in cfg.model.encoder_model_name):
+    if ("w2v-bert" in cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+    elif ("mimi" in cfg.model.encoder_model_name) or ("kyutai/mimi" == cfg.model.encoder_model_name):
+        from transformers import AutoFeatureExtractor
+        processor = AutoFeatureExtractor.from_pretrained("kyutai/mimi")
     else:
         processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
     
@@ -58,6 +61,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg,
     )
     
     test_dataset = AudioChatDataset(
@@ -67,6 +71,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg,
     )
     
     print_parameter_count(model, logger)
@@ -117,11 +122,20 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             # move data to GPU
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
             if isinstance(batch["audio_features"], dict):
-                # for wav2vec-bert/seamless models
-                audio_features = {
-                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
-                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
-                }
+                if "input_features" in batch["audio_features"]:
+                    # for wav2vec-bert/seamless models
+                    audio_features = {
+                        'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                        'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                    }
+                elif "input_values" in batch["audio_features"]:
+                    # for Mimi models
+                    audio_features = {
+                        'input_values': batch["audio_features"]["input_values"].to("cuda", torch.bfloat16, non_blocking=True)
+                    }
+                else:
+                    # fallback
+                    audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
             else:
                 # for other models (Whisper, CLAP, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)

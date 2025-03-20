@@ -1,7 +1,7 @@
 import torch
 import torchaudio
 from torch import Tensor
-from transformers import AutoProcessor, AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer, AutoFeatureExtractor
 from transformers import BatchFeature
 from datasets import Audio
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE, GEMMA_3
@@ -13,7 +13,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  dataset: str="coral", split="train.clean.100", 
                  tokenizer=None, 
                  processor=None,
-                 T=30):
+                 T=30,
+                 config=None):
         self.lm_model_name = lm_model
         self.dataset_name = dataset
         
@@ -64,7 +65,13 @@ class AudioChatDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.T = T # TinyAlign Tokenizer Cutoff/Pad to value.
         self._setup_chat_template()
-        self.processor = processor or AutoProcessor.from_pretrained("openai/whisper-base.en")
+        # initialize the appropriate processor based on model type
+        if processor is not None:
+            self.processor = processor
+        elif config is not None and hasattr(config, 'model') and hasattr(config.model, 'encoder_model_name') and "mimi" in config.model.encoder_model_name.lower():
+            self.processor = AutoFeatureExtractor.from_pretrained("kyutai/mimi")
+        else:
+            self.processor = AutoProcessor.from_pretrained("openai/whisper-base.en")
         self.audio_token = "<|audio|>"
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token)
     
@@ -117,6 +124,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             target_sampling_rate = 16000
         elif "Encodec" in self.processor.__class__.__name__:
             target_sampling_rate = self.processor.sampling_rate
+        elif "Mimi" in self.processor.__class__.__name__:
+            target_sampling_rate = 16000  # Mimi expects 16kHz
         else:
             target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
@@ -128,9 +137,21 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 new_freq=target_sampling_rate
             )
 
+        # Handle Mimi and other models that need normalization
+        if "MimiFeatureExtractor" in self.processor.__class__.__name__ or "Mimi" in self.processor.__class__.__name__:
+            # Normalize audio to prevent clipping
+            audio_array = audio_array / (audio_array.abs().max() + 1e-8)
+            
         if ("Wav2Vec2" in self.processor.__class__.__name__):
             # for wav2vec, return raw waveform
             return audio_array
+        elif "MimiFeatureExtractor" in self.processor.__class__.__name__ or "Mimi" in self.processor.__class__.__name__:
+            # Process with Mimi feature extractor following the HuggingFace example
+            return self.processor(
+                raw_audio=audio_array,
+                sampling_rate=target_sampling_rate,
+                return_tensors="pt"
+            )
         elif ("SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__):
             return self.processor(
                 audio_array,
@@ -325,7 +346,40 @@ def collate_fn(batch, tokenizer, T):
     alt_attention_mask = torch.stack(alt_attention_mask)
 
     # handle audio features based on model type
-    if isinstance(audio_features[0], torch.Tensor):
+    if isinstance(audio_features[0], dict) and "input_values" in audio_features[0]:
+        # handling for Mimi and similar models that use feature extractors
+        input_values_list = [af["input_values"] for af in audio_features]
+        
+        # check shape and handle appropriately
+        if len(input_values_list[0].shape) == 3:  # [1, 1, samples]
+            # pad the sequences in the time dimension
+            max_len = max(tensor.size(2) for tensor in input_values_list)
+            padded_tensors = []
+            
+            for tensor in input_values_list:
+                pad_size = max_len - tensor.size(2)
+                padded = torch.nn.functional.pad(tensor, (0, pad_size, 0, 0, 0, 0), value=0.0)
+                padded_tensors.append(padded)
+                
+            # stack them along batch dimension
+            audio_features = torch.cat(padded_tensors, dim=0)
+        elif len(input_values_list[0].shape) == 2:  # [1, samples]
+            # pad the sequences in the time dimension
+            max_len = max(tensor.size(1) for tensor in input_values_list)
+            padded_tensors = []
+            
+            for tensor in input_values_list:
+                pad_size = max_len - tensor.size(1)
+                padded = torch.nn.functional.pad(tensor, (0, pad_size, 0, 0), value=0.0)
+                padded_tensors.append(padded)
+                
+            # stack them along batch dimension to get [batch, 1, samples]
+            stacked = torch.cat(padded_tensors, dim=0)
+            audio_features = {"input_values": stacked}
+        else:
+            # other format, try to handle gracefully
+            audio_features = {"input_values": torch.stack(input_values_list)}
+    elif isinstance(audio_features[0], torch.Tensor):
         # for wav2vec and other raw waveform models
         if len(audio_features[0].size()) == 3:
             reshaped_features = []
