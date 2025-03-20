@@ -45,19 +45,23 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 simplified_ds = ds.select_columns(['audio', 'text'])
 
                 simplified_datasets.append(simplified_ds)
-                
+                # print len
+                print(f"Loaded dataset with {len(simplified_ds)} samples")
+
             # Concatenate all simplified datasets and shuffle
             self.dataset = concatenate_datasets(simplified_datasets)
+            # print len
+            print(f"Concatenated {len(self.dataset)} samples from {len(simplified_datasets)} datasets: {loaded_dataset_names}")
             # Shuffle the dataset
             indices = list(range(len(self.dataset)))
-            self.dataset = self.dataset.select(random.shuffle(indices))
+            random.shuffle(indices)
+            self.dataset = self.dataset.select(indices)
             
         else:
             # Single dataset
             self.dataset = self._load_single_dataset(dataset, split)
             if self.dataset is None:
                 raise ValueError(f"Failed to load dataset: {dataset}")
-            print(f"Loaded dataset {dataset} with {len(self.dataset)} samples")
             
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
@@ -85,6 +89,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
             elif dataset_name == "melatech":
                 from dataset.load_melatech import melatech_dataset_dict
                 return melatech_dataset_dict[split_key].cast_column("audio", Audio(sampling_rate=16000))
+            elif dataset_name == "mls":
+                from dataset.load_multilingual_librispeech import multilingual_librispeech_dataset_dict
+                return multilingual_librispeech_dataset_dict[split_key]#.cast_column("audio", Audio(sampling_rate=16000))
             else:
                 print(f"Unsupported dataset: {dataset_name}")
                 return None
@@ -96,7 +103,10 @@ class AudioChatDataset(torch.utils.data.Dataset):
             return None
 
     def __len__(self):
-        return len(self.dataset)
+        try:
+            return len(self.dataset)
+        except TypeError:
+            return int(1e6)
     
     def _setup_chat_template(self):
         if "SmolLM2" in self.lm_model_name:

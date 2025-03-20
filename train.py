@@ -81,7 +81,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         dataset, 
         batch_size=cfg.training.batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
-        shuffle=True,
+        shuffle=True if "mls" not in cfg.dataset.name else False,
         num_workers=8,
         prefetch_factor=4,
         pin_memory=True
