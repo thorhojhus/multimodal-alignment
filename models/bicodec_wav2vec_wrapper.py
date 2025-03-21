@@ -39,7 +39,7 @@ class BiCodecWrapper(nn.Module):
 
     def extract_wav2vec2_features(self, wavs: NDArray) -> NDArray:
         """extract wav2vec2 features"""
-        wavs = torch.from_numpy(wavs).squeeze()
+        wavs = wavs.squeeze().to("cpu", dtype=torch.float32) #torch.from_numpy(wavs).squeeze()
         inputs = self.processor(wavs, sampling_rate=16000, return_tensors="pt", padding=True, output_hidden_states=True).input_values.to("cuda", torch.bfloat16)
         
         inputs = inputs.squeeze()
@@ -51,11 +51,11 @@ class BiCodecWrapper(nn.Module):
 
         return feats_mix
 
-    def forward(self, wav : NDArray) -> torch.Tensor:
+    def forward(self, wav : torch.Tensor) -> torch.Tensor:
         print(wav)
         feat = self.extract_wav2vec2_features(wav)
         batch = {
-            "wav": torch.from_numpy(wav).unsqueeze(0).float().to(self.device),
+            "wav": wav.unsqueeze(0).float().to(self.device),
             "feat": feat.to(self.device),
         }
         semantic_tokens = self.bicodec.tokenize(batch)
