@@ -17,8 +17,8 @@
 #BSUB -N
 ### -- Specify the output and error file. %J is the job-id --
 ### -- -o and -e mean append, -oo and -eo mean overwrite --
-#BSUB -oo latest_gemma_audio_tokenizer_hviske.out
-#BSUB -eo latest_gemma_audio_tokenizer_hviske.err
+#BSUB -oo mimi.out
+#BSUB -eo mimi.err
 # -- end of LSF options --
 
 nvidia-smi
@@ -30,4 +30,4 @@ cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 
 
-python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=kyutai/mimi training.batch_size=32 eval.batch_size=32 dataset.name=\'coral,librispeech,melatech\' model.load_in_4bit=true training.loss=ce wandb.enabled=true training.num_epochs=5
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=kyutai/mimi training.batch_size=16 eval.batch_size=16 dataset.name=\'coral,librispeech,melatech\' model.load_in_4bit=true training.loss=ce wandb.enabled=true training.num_epochs=5
