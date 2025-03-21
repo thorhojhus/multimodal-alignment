@@ -134,8 +134,6 @@ class AudioLLMModel(nn.Module):
         with torch.no_grad():
             if self.config.model.encoder_model_name != "kyutai/mimi":
                 audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            elif "BiCodec" in self.config.model.encoder_model_name:
-                return self.audio_encoder(audio_features)
             else:
                 audio_encoded = self.audio_encoder(audio_features).audio_codes
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
