@@ -228,8 +228,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
         )[0]
 
         # add EOS token to the end of the conversation
-        # tokenized = torch.cat([tokenized, torch.tensor([self.tokenizer.eos_token_id])])
-        # tokenized_alt = torch.cat([tokenized_alt, torch.tensor([self.tokenizer.eos_token_id])])
+        tokenized = torch.cat([tokenized, torch.tensor([self.tokenizer.eos_token_id])])
+        tokenized_alt = torch.cat([tokenized_alt, torch.tensor([self.tokenizer.eos_token_id])])
 
         # Tokenize only the part of the conversation that is part of the assistant.
         assistant_response = self.tokenizer.apply_chat_template(
@@ -240,10 +240,10 @@ class AudioChatDataset(torch.utils.data.Dataset):
         
         # Label such that only assistance part is considering doing the model pass
         labels = torch.full(tokenized.size(), fill_value=-100)
-        labels[-len(assistant_response):] = assistant_response
+        labels[-len(assistant_response)-1:-1] = assistant_response
 
         alt_labels = torch.full(tokenized_alt.size(), fill_value=-100)
-        alt_labels[-len(assistant_response):] = assistant_response
+        alt_labels[-len(assistant_response)-1:-1] = assistant_response
         
         return {
             "input_ids": tokenized,

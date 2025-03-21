@@ -265,6 +265,14 @@ class AudioLLMModel(nn.Module):
             combined_embeds, combined_labels, combined_attention_mask = self._combine_embeddings(
                 text_embeds, audio_embeds, insertion_indices, labels, attention_mask
             )
+            combined_embeds = combined_embeds.unsqueeze(0)
+            combined_labels = combined_labels.unsqueeze(0)
+            combined_attention_mask = combined_attention_mask.unsqueeze(0)
+            if self.config.training.loss == "kl_loss":
+                # These are otherwise None if we are not doing a KL loss
+                alt_input_ids = alt_input_ids.unsqueeze(0)
+                alt_attention_mask = alt_attention_mask.unsqueeze(0)
+                alt_labels = alt_labels.unsqueeze(0)
         else:
             combined_lists = self._combine_embeddings_batched(
                 text_embeds, audio_embeds, insertion_indices, labels, attention_mask
@@ -273,32 +281,23 @@ class AudioLLMModel(nn.Module):
 
         # calculate KL loss if specified
         if self.config.training.loss == "kl_loss":
-            if combined:
-                # we need to "batch" it by adding the batch dimension D = 1
-                lm_output = self.lm.forward(
-                    inputs_embeds=combined_embeds.unsqueeze(0),
-                    attention_mask=combined_attention_mask.unsqueeze(0),
-                )
-                
-                return self._compute_kl_loss(lm_output=lm_output, labels=combined_labels.unsqueeze(0), alt_input_ids=alt_input_ids.unsqueeze(0), alt_attention_mask=alt_attention_mask.unsqueeze(0), alt_labels=alt_labels.unsqueeze(0))
-            else:
-                lm_output = self.lm.forward(
-                    inputs_embeds=combined_embeds,
-                    attention_mask=combined_attention_mask,
-                )
-                return self._compute_kl_loss(
-                    lm_output=lm_output, 
-                    labels=combined_labels, 
-                    alt_input_ids=alt_input_ids, 
-                    alt_attention_mask=alt_attention_mask,
-                    alt_labels=alt_labels
-                )
+            lm_output = self.lm.forward(
+                inputs_embeds=combined_embeds,
+                attention_mask=combined_attention_mask,
+            )
+            return self._compute_kl_loss(
+                lm_output=lm_output, 
+                labels=combined_labels, 
+                alt_input_ids=alt_input_ids, 
+                alt_attention_mask=alt_attention_mask,
+                alt_labels=alt_labels
+            )
         
         # forward pass through language model (cross-entropy loss)
         return self.lm(
-            inputs_embeds=combined_embeds.unsqueeze(0) if combined else combined_embeds,
-            attention_mask=combined_attention_mask.unsqueeze(0) if combined else combined_attention_mask,
-            labels=combined_labels.unsqueeze(0) if combined else combined_labels,
+            inputs_embeds=combined_embeds,
+            attention_mask=combined_attention_mask,
+            labels=combined_labels,
         )
 
     def generate(
