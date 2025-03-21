@@ -136,7 +136,26 @@ def generate_batch(
 
     user_prompts = user_prompts.to("cuda")
     user_prompt_masks = user_prompt_masks.to("cuda")
-    audio_features = batch["audio_features"].to("cuda", torch.bfloat16)
+    
+    # handle different audio feature formats
+    if isinstance(batch["audio_features"], dict):
+        if "input_features" in batch["audio_features"]:
+            # for wav2vec-bert/seamless models
+            audio_features = {
+                'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+            }
+        elif "input_values" in batch["audio_features"]:
+            # for Mimi models
+            audio_features = {
+                'input_values': batch["audio_features"]["input_values"].to("cuda", torch.bfloat16, non_blocking=True)
+            }
+        else:
+            # fallback
+            audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
+    else:
+        audio_features = batch["audio_features"].to("cuda", torch.bfloat16)
+        
     insertion_indices = [indices.to("cuda") for indices in batch["insertion_indices"]]
 
     with torch.inference_mode():
@@ -294,10 +313,20 @@ def calculate_eval_loss(
             # move data to GPU
             input_ids = batch["input_ids"].to("cuda", non_blocking=True)
             if isinstance(batch["audio_features"], dict):
-                audio_features = {
-                    'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
-                    'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
-                }
+                if "input_features" in batch["audio_features"]:
+                    # for wav2vec-bert/seamless models
+                    audio_features = {
+                        'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                        'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                    }
+                elif "input_values" in batch["audio_features"]:
+                    # for Mimi models
+                    audio_features = {
+                        'input_values': batch["audio_features"]["input_values"].to("cuda", torch.bfloat16, non_blocking=True)
+                    }
+                else:
+                    # fallback
+                    audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
             else:
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
 

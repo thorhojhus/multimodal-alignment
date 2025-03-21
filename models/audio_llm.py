@@ -26,6 +26,8 @@ class AudioLLMModel(nn.Module):
         self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         if self.config.model.audio_tokenizer:
             self.projector = self._create_audio_tokenizer()
+        elif self.config.model.encoder_model_name == "kyutai/mimi":
+            self.projector = self._create_mimi_tokenizer()
         else:
             self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
@@ -42,6 +44,12 @@ class AudioLLMModel(nn.Module):
         self.MSELoss = nn.MSELoss()
         self.CosSim = nn.CosineSimilarity(dim=-1)
 
+    def _create_mimi_tokenizer(self):
+        from models.mimi_tokenizer import MimiTokenizer
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return MimiTokenizer(vocab_size=2048, 
+                                     embed_dim=embed_dim,
+                                     use_hierarchical=self.config.model.get('use_hierarchical', True))
 
     def _create_audio_tokenizer(self):
         from models.audio_tokenizer import AudioTokenizer
@@ -64,7 +72,7 @@ class AudioLLMModel(nn.Module):
 
         if "gemma-3" in self.config.model.lm_model_name:
             from transformers import Gemma3ForCausalLM
-            # no liger support for gemma-3 yet
+            # no liger support for gemma-3 yet, can also not get anything but google/gemma-3-1b-it to work
             lm = Gemma3ForCausalLM.from_pretrained(
                 self.config.model.lm_model_name,
                 attn_implementation="flash_attention_2",
@@ -114,7 +122,10 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            if self.config.model.encoder_model_name != "kyutai/mimi":
+                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+            else:
+                audio_encoded = self.audio_encoder(audio_features).audio_codes
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
     
@@ -125,7 +136,7 @@ class AudioLLMModel(nn.Module):
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
-        B, D, _ = audio_embeds.shape
+        B, D, *_ = audio_embeds.shape 
 
         for i in range(B):
             embeds = text_embeds[i]
@@ -206,7 +217,7 @@ class AudioLLMModel(nn.Module):
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
-
+        
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences

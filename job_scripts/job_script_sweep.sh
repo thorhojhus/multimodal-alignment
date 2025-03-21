@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train_sweep.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=syvai/hviske-v2 model.audio_tokenizer=true training.batch_size=16 model.load_in_4bit=true wandb.enabled=true wandb.run_name=audiotokenizer-vocab-size-sweep training.num_epochs=1 dataset.name=coral
+python train_sweep.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=16 model.load_in_4bit=true wandb.enabled=true wandb.run_name=ultravox-downsample-factor-sweep training.num_epochs=1 dataset.name=coral
 #python train.py

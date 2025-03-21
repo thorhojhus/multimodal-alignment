@@ -34,10 +34,8 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-    OmegaConf.update(cfg, "model.audio_tokenizer_vocab_size", wandb.config["vocab_size"])
-    if cfg.wandb.enabled:
-        wandb.run.name = f"{cfg.wandb.run_name}-({wandb.config['vocab_size']})"
-
+    OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
+    wandb.run.name = f"downsample-factor-sweep ({wandb.config['downsample_factor']})"
     model = AudioLLMModel(cfg)
     summary(model)
     
@@ -260,9 +258,7 @@ def main(cfg: DictConfig):
         "method": "grid",
         "metric": {"name": "eval/loss", "goal": "minimize"},
         "parameters": {
-            "vocab_size": {
-                "values": [512, 1024, 2048, 4096, 8192, 16384]
-            },
+            "downsample_factor": {"values": [2, 5, 8, 10, 12, 15, 20, 25, 35, 50]}
         }
     }
 
