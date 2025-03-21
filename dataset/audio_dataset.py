@@ -179,6 +179,11 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 sampling_rate=target_sampling_rate,
                 return_tensors="pt",
             )["input_values"]
+        elif ("BiCodec" in self.config.model.encoder_model_name):
+            if type(audio_array) is torch.Tensor:
+                audio_array = audio_array.numpy()
+            audio_array = audio_array.squeeze()
+            return  self.processor(audio_array, sampling_rate=16000, return_tensors="pt", padding=True, output_hidden_states=True)
         
 
 

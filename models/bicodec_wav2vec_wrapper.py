@@ -3,6 +3,7 @@ import torch.nn as nn
 from sparktts.models.bicodec import BiCodec
 from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
 from numpy.typing import NDArray
+from torch.types import Tensor
 from typing import Dict
 
 class BiCodecInherit(BiCodec):
@@ -39,25 +40,19 @@ class BiCodecWrapper(nn.Module):
 
     def extract_wav2vec2_features(self, wavs: NDArray) -> NDArray:
         """extract wav2vec2 features"""
-        wavs = torch.from_numpy(wavs).squeeze()
-        inputs = self.processor(wavs, sampling_rate=16000, return_tensors="pt", padding=True, output_hidden_states=True).input_values.to("cuda", torch.bfloat16)
-        
-        inputs = inputs.squeeze()
 
-        feat = self.feature_extractor(inputs.to(self.feature_extractor.device))
+        feat = self.feature_extractor(wavs.to(self.feature_extractor.device))
         feats_mix = (
             feat.hidden_states[11] + feat.hidden_states[14] + feat.hidden_states[16]
         ) / 3
 
         return feats_mix
 
-    def forward(self, wav : NDArray) -> torch.Tensor:
-        print(wav)
+    def forward(self, wav : Tensor) -> Tensor:
         feat = self.extract_wav2vec2_features(wav)
         batch = {
-            "wav": torch.from_numpy(wav).unsqueeze(0).float().to(self.device),
+            "wav": wav.unsqueeze(0).float().to(self.device),
             "feat": feat.to(self.device),
         }
         semantic_tokens = self.bicodec.tokenize(batch)
-
         return semantic_tokens

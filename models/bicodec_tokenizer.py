@@ -42,6 +42,17 @@ class BiCodecTokenizer(nn.Module):
             device=self.device,
             dtype=dtype
         )
+        self.downsample = nn.Sequential(nn.Conv1d(
+            in_channels=embed_dim,
+            out_channels=embed_dim,
+            kernel_size=10,
+            stride=10,
+            groups=embed_dim,
+            device=self.device,
+            dtype=dtype
+        ), nn.SiLU())
+
+        # nn.LayerNorm(vocab_size, device=self.device, dtype=dtype)
         
 
     def forward(self, tokens: Tensor) -> Tensor:
@@ -54,10 +65,10 @@ class BiCodecTokenizer(nn.Module):
         Returns:
             Tensor: Embedded audio tokens [batch_size, seq_len, embed_dim]
         """
-        b, semantic_tokens = tokens.shape
-        
-
-        outs = self.audio_embedding(semantic_tokens)
+        outs = self.audio_embedding(tokens)
+        outs = outs.transpose(1,2)
+        outs = self.downsample(outs)
+        outs = outs.transpose(1,2)
         return outs
 
 if __name__ == "__main__":

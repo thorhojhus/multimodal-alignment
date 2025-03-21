@@ -28,7 +28,7 @@ class AudioLLMModel(nn.Module):
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
-        elif self.config.model.encoder_model_name == "weights/BiCodec":
+        elif self.config.model.encoder_model_name == "BiCodec":
             self.projector = self._create_bicodec_tokenizer()
         else:
             self.projector = self._create_projector(config.model.projector)
@@ -132,11 +132,17 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            if self.config.model.encoder_model_name != "kyutai/mimi":
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            else:
+            if "mimi" in self.config.model.encoder_model_name:
                 audio_encoded = self.audio_encoder(audio_features).audio_codes
+
+            elif "BiCodec" in self.config.model.encoder_model_name:
+                audio_encoded = self.audio_encoder(audio_features)
+            
+            else:
+                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+
         return self.projector(audio_encoded)
     
     def _combine_embeddings(
