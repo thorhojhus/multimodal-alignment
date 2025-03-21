@@ -17,7 +17,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  config=None):
         self.lm_model_name = lm_model
         self.dataset_name = dataset
-        
+        self.config = config
         # Handle multiple datasets separated by commas
         if "," in dataset:
             datasets = []
@@ -126,6 +126,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             target_sampling_rate = self.processor.sampling_rate
         elif "Mimi" in self.processor.__class__.__name__:
             target_sampling_rate = 16000  # Mimi expects 16kHz
+        elif "BiCodec" in self.config.model.encoder_model_name:
+            target_sampling_rate = 16000
         else:
             target_sampling_rate = self.processor.feature_extractor.sampling_rate
 

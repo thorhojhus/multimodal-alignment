@@ -16,6 +16,7 @@ class EncoderEnum(Enum):
     WAV2VEC = "facebook/wav2vec2-base-960h"
     WAV2VECBERT = "facebook/w2v-bert-2.0"
     MIMI = "kyutai/mimi"
+    BICODEC = "BiCodec"
 
 class EncoderWrapper(AutoModel):
     """As the different audio encoders have different configs, and different input types, wrap the encoders"""
@@ -63,6 +64,10 @@ class EncoderWrapper(AutoModel):
                     torch_dtype=torch.bfloat16,
                     device_map="cuda"
                 )
+            case EncoderEnum.BICODEC:
+                from models.bicodec_wav2vec_wrapper import BiCodecWrapper
+                encoder = BiCodecWrapper(bicodec_dir="/work3/s224233/shared/multimodal-alignment/weights/BiCodec", wav2vec_model="facebook/wav2vec2-large-xlsr-53").to("cuda", torch.bfloat16)
+
 
         # freeze encoder params
         for param in encoder.parameters():
@@ -83,6 +88,8 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.MIMI:
                 # For Mimi, no projection dimension needed as we handle the tokens directly with MimiTokenizer
                 return 32  # Number of codebooks in Mimi
+            case EncoderEnum.BICODEC:
+                return 1
 
     def prepare_for_projection(self, audio_encoded: torch.Tensor) -> torch.Tensor:
         """Prepare the encoder for projection."""
@@ -98,14 +105,21 @@ class EncoderWrapper(AutoModel):
                 # Mimi encoder outputs audio codes in shape [batch_size, 32, seq_len]
                 # No transformation needed as MimiTokenizer handles this shape directly
                 return audio_encoded
+            case EncoderEnum.BICODEC:
+                return audio_encoded
 
     def __call__(self, *args, **kwargs):
-            if isinstance(args[0], dict):
-                return self.audio_encoder(**args[0])
-            return self.audio_encoder(*args, **kwargs)
+        if isinstance(args[0], dict):
+            return self.audio_encoder(**args[0])
+        return self.audio_encoder(*args, **kwargs)
 
 if __name__ == "__main__":
-    encoder = EncoderWrapper(EncoderEnum.WHISPER.value)
+    encoder = EncoderWrapper(EncoderEnum.BICODEC.value)
     print(encoder)
-    encoder = EncoderWrapper(EncoderEnum.CLAP.value)
-    print(encoder)
+    import numpy as np
+    x = np.random.randn(2, 32000)
+    print(encoder(x))
+    # encoder = EncoderWrapper(EncoderEnum.WHISPER.value)
+    # print(encoder)
+    # encoder = EncoderWrapper(EncoderEnum.CLAP.value)
+    # print(encoder)

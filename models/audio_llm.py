@@ -28,6 +28,8 @@ class AudioLLMModel(nn.Module):
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
+        elif self.config.model.encoder_model_name == "weights/BiCodec":
+            self.projector = self._create_bicodec_tokenizer()
         else:
             self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
@@ -43,6 +45,14 @@ class AudioLLMModel(nn.Module):
         self.beta = 1.0
         self.MSELoss = nn.MSELoss()
         self.CosSim = nn.CosineSimilarity(dim=-1)
+
+    def _create_bicodec_tokenizer(self):
+        from models.bicodec_tokenizer import BiCodecTokenizer
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return BiCodecTokenizer(vocab_size=8192, 
+                                     embed_dim=embed_dim,
+                                     dtype=torch.bfloat16,
+                                     device="cuda")
 
     def _create_mimi_tokenizer(self):
         from models.mimi_tokenizer import MimiTokenizer
