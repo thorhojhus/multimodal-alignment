@@ -1,8 +1,11 @@
 from types import SimpleNamespace
 from typing import Any, List, Literal, Optional, Tuple, Union, Dict
+import typing
 
 import torch
 import transformers
+import os
+
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch import Tensor, nn
@@ -25,6 +28,8 @@ class AudioLLMModel(nn.Module):
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
+        elif self.config.model.encoder_model_name == "BiCodec":
+            self.projector = self._create_bicodec_tokenizer()
         else:
             self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
@@ -40,6 +45,14 @@ class AudioLLMModel(nn.Module):
         self.beta = 1.0
         self.MSELoss = nn.MSELoss()
         self.CosSim = nn.CosineSimilarity(dim=-1)
+
+    def _create_bicodec_tokenizer(self):
+        from models.bicodec_tokenizer import BiCodecTokenizer
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return BiCodecTokenizer(vocab_size=8192, 
+                                     embed_dim=embed_dim,
+                                     dtype=torch.bfloat16,
+                                     device="cuda")
 
     def _create_mimi_tokenizer(self):
         from models.mimi_tokenizer import MimiTokenizer
@@ -122,11 +135,17 @@ class AudioLLMModel(nn.Module):
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
         with torch.no_grad():
-            if self.config.model.encoder_model_name != "kyutai/mimi":
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
-            else:
+            if "mimi" in self.config.model.encoder_model_name:
                 audio_encoded = self.audio_encoder(audio_features).audio_codes
+
+            elif "BiCodec" in self.config.model.encoder_model_name:
+                audio_encoded = self.audio_encoder(audio_features)
+            
+            else:
+                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+
         return self.projector(audio_encoded)
     
     def _combine_embeddings(
@@ -199,14 +218,21 @@ class AudioLLMModel(nn.Module):
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
         attention_mask: Optional[Tensor] = None, labels: Optional[Tensor] = None,
         alt_input_ids: Optional[Tensor] = None, alt_attention_mask: Optional[Tensor] = None,
-        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, **kwargs
+        alt_labels: Optional[Tensor] = None, text_ids: Optional[Tensor] = None, trunced_text_ids: Optional[Tensor] = None,
+        audio_wavs: Optional[Tensor] = None, **kwargs
     ) -> Any:
         
         # If embed_loss (TinyAlign) is used:
         if self.config.training.loss=="embed_loss":
-            text_embeddings = self.lm.get_input_embeddings()(text_ids)
+            text_embeddings = self.lm.get_input_embeddings()(trunced_text_ids)
             audio_embeddings = self._process_audio_features(audio_features)
             return self.embed_loss(audio_embeddings, text_embeddings)
+
+        # calculate audio reconstruction loss if specified
+        if self.config.training.loss == "wav_loss":
+            output_wavs = self.generate_tts(self.tokenizer.batch_decode(text_ids, skip_special_tokens=True))
+            return self._audio_reconstruction_loss(audio_wavs, output_wavs, "L1")
+
 
         # process audio and text features
         audio_embeds = self._process_audio_features(audio_features)
@@ -234,11 +260,13 @@ class AudioLLMModel(nn.Module):
             )
         
         # forward pass through language model (cross-entropy loss)
-        return self.lm(
+        llm_output = self.lm(
                 inputs_embeds=combined_embeds,
                 attention_mask=combined_attention_mask,
                 labels=combined_labels
             )
+        
+        return llm_output
 
     def generate(
         self, input_ids: Tensor, audio_features: Tensor,
@@ -269,6 +297,17 @@ class AudioLLMModel(nn.Module):
             attention_mask=combined_attention_mask,
             **generation_config
         )
+
+    def _audio_reconstruction_loss(self, in_audio_wav: Tensor, out_audio_wav: Tensor, loss_type: typing.Literal["L1", "L2"]) -> Tensor:
+        """Reconstruction loss for audio."""
+
+        if loss_type == "L1":
+            loss = F.l1_loss(in_audio_wav, out_audio_wav)
+        elif loss_type == "L2":
+            loss = F.mse_loss(in_audio_wav, out_audio_wav)
+        else:
+            raise NotImplementedError(f"Loss type {loss_type} not implemented.")
+        return SimpleNamespace(loss=loss)
 
     def _compute_kl_loss(
         self,

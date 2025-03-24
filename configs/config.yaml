@@ -17,6 +17,7 @@ model:
   audio_tokenizer_vocab_size: 16384
   train_llm: false
   train_encoder: false
+  use_sparktts: true
 
 training:
   num_epochs: 3

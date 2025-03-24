@@ -48,6 +48,9 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     if ("w2v-bert" in cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+    elif ("BiCodec" in cfg.model.encoder_model_name):
+        from transformers import Wav2Vec2FeatureExtractor
+        processor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
     elif ("mimi" in cfg.model.encoder_model_name) or ("kyutai/mimi" == cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained("kyutai/mimi")

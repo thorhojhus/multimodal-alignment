@@ -17,7 +17,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  config=None):
         self.lm_model_name = lm_model
         self.dataset_name = dataset
-        
+        self.config = config
         # Handle multiple datasets separated by commas
         if "," in dataset:
             datasets = []
@@ -126,6 +126,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             target_sampling_rate = self.processor.sampling_rate
         elif "Mimi" in self.processor.__class__.__name__:
             target_sampling_rate = 16000  # Mimi expects 16kHz
+        elif "BiCodec" in self.config.model.encoder_model_name:
+            target_sampling_rate = 16000
         else:
             target_sampling_rate = self.processor.feature_extractor.sampling_rate
 
@@ -177,6 +179,11 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 sampling_rate=target_sampling_rate,
                 return_tensors="pt",
             )["input_values"]
+        elif ("BiCodec" in self.config.model.encoder_model_name):
+            if type(audio_array) is torch.Tensor:
+                audio_array = audio_array.numpy()
+            audio_array = audio_array.squeeze()
+            return  self.processor(audio_array, sampling_rate=16000, return_tensors="pt", padding=True, output_hidden_states=True)
         
 
 
@@ -213,7 +220,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
         conversation_alt = self._format_chat(text, text)
-        
+
         # tokenize conversation with special handling for audio token
         tokenized = self.tokenizer.apply_chat_template(
             conversation,
@@ -437,7 +444,7 @@ def collate_fn(batch, tokenizer, T):
         "alt_input_ids": alt_input_ids,
         "alt_labels": alt_labels,
         "alt_attention_mask": alt_attention_mask,
-        "text_ids": text_ids
+        "text_ids": text_ids,
     }
 
 if __name__ == "__main__":

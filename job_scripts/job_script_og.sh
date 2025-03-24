@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=HuggingFaceTB/SmolLM2-1.7B-Instruct model.encoder_model_name=laion/clap-htsat-unfused model.downsample_factor=1 training.batch_size=32 wandb.enabled=true
+python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=BiCodec training.batch_size=8 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=bicodec-gemma-2b-avgpool-downsample-test
 #python train.py

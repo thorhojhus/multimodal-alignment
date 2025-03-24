@@ -4,6 +4,7 @@ import time
 from datetime import timedelta
 import hydra
 import torch
+from torchinfo import summary
 import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def setup_wandb(runtime_config: DictConfig) -> None:
     wandb.init(
         entity="borkeren",
-        project="downsample-factor-sweep",
+        project="vocab-size-sweep",
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}"
              if runtime_config.wandb.run_name == "default"
              else runtime_config.wandb.run_name,
@@ -36,7 +37,8 @@ def train_multiple(cfg: DictConfig) -> None:
     OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
     wandb.run.name = f"downsample-factor-sweep ({wandb.config['downsample_factor']})"
     model = AudioLLMModel(cfg)
-
+    summary(model)
+    
     # freeze non-trainable components
     for param in model.lm.parameters():
         param.requires_grad = False    
@@ -55,6 +57,7 @@ def train_multiple(cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg
     )
     
     test_dataset = AudioChatDataset(
@@ -64,6 +67,7 @@ def train_multiple(cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg
     )
     
     print_parameter_count(model, logger)
@@ -260,7 +264,7 @@ def main(cfg: DictConfig):
         }
     }
 
-    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="downsample-factor-sweep")
+    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="vocab-size-sweep")
 
     wandb.agent(sweep_id, function=functools.partial(train_multiple, cfg=cfg))
 
