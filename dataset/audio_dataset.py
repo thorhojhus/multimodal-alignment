@@ -265,6 +265,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "alt_input_ids": tokenized_alt,
             "alt_labels": alt_labels,
             "text_ids": torch.tensor(self.tokenizer.encode(text)),
+            "raw_audio": audio_array,
         }
 
 
@@ -316,7 +317,7 @@ def prepare_inputs(
     return new_input_ids, new_attention_mask, new_labels, insertion_indices
 
 
-def collate_fn(batch, tokenizer, T):
+def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
     # handle text inputs
     max_len = max(len(item["input_ids"]) for item in batch)
     max_len_pad = max(len(item["alt_input_ids"]) for item in batch)
@@ -455,7 +456,8 @@ def collate_fn(batch, tokenizer, T):
         "alt_labels": alt_labels,
         "alt_attention_mask": alt_attention_mask,
         "text_ids": text_ids,
-    }
+        "raw_audio": [item["raw_audio"] for item in batch] if include_raw_audio else None
+    } 
 
 if __name__ == "__main__":
     import transformers

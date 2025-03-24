@@ -209,7 +209,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     tokenizer=model.tokenizer,
                     logger=logger,
                     n_samples=cfg.eval.n_samples,
-                    batch_size=cfg.eval.batch_size
+                    batch_size=cfg.eval.batch_size or cfg.training.batch_size
                 )
                 
                 # run WER/CER evaluation
@@ -220,7 +220,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     logger=logger,
                     n_samples=cfg.eval.n_samples,
                     config=cfg,
-                    batch_size=cfg.eval.batch_size
+                    batch_size=cfg.eval.batch_size or cfg.training.batch_size
                 )
                 
                 logger.info(
