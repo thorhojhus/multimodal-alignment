@@ -93,8 +93,8 @@ def train(batch_size, model: torch.nn.Module, cfg: DictConfig) -> None:
         batch_size=batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
         shuffle=True,
-        num_workers= 0,  # 8,
-        # prefetch_factor=4,
+        num_workers= 8,
+        prefetch_factor=4,
         pin_memory=True
     )
     
