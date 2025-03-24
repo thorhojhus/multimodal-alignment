@@ -29,4 +29,4 @@ module swap cuda/12.8.0
 cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 
-python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=facebook/wav2vec2-base-960h model.projector=conv model.downsample_factor=6 training.batch_size=64 wandb.enabled=true
+python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=facebook/wav2vec2-base-960h model.projector=conv model.downsample_factor=6 training.batch_size=32 eval.batch_size=32 wandb.enabled=true dataset.name=\'coral,librispeech\'

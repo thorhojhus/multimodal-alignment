@@ -129,7 +129,10 @@ class AudioChatDataset(torch.utils.data.Dataset):
         elif "BiCodec" in self.config.model.encoder_model_name:
             target_sampling_rate = 16000
         else:
-            target_sampling_rate = self.processor.feature_extractor.sampling_rate
+            try:
+                target_sampling_rate = self.processor.feature_extractor.sampling_rate
+            except:
+                target_sampling_rate = 16000
 
         # resample if necessary
         if audio_sampling_rate != target_sampling_rate:
@@ -146,6 +149,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
             
         if ("Wav2Vec2" in self.processor.__class__.__name__):
             # for wav2vec, return raw waveform
+            
+            if len(audio_array) / audio_sampling_rate > 17: # truncate audio to 17 seconds
+                audio_array = audio_array[:audio_sampling_rate*17]
             return audio_array
         elif "MimiFeatureExtractor" in self.processor.__class__.__name__ or "Mimi" in self.processor.__class__.__name__:
             # Process with Mimi feature extractor following the HuggingFace example
@@ -180,6 +186,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 return_tensors="pt",
             )["input_values"]
         elif ("BiCodec" in self.config.model.encoder_model_name):
+            if len(audio_array) / audio_sampling_rate > 17: # truncate audio to 17 seconds
+                audio_array = audio_array[:audio_sampling_rate*17]
             if type(audio_array) is torch.Tensor:
                 audio_array = audio_array.numpy()
             audio_array = audio_array.squeeze()
@@ -216,6 +224,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 audio_sampling_rate = 16000  # Default to 16kHz if not specified
             else:
                 raise ValueError(f"Unsupported audio format: {type(audio)}")
+
+
         audio_features = self._audio_to_features(audio_array, audio_sampling_rate)
         # format as chat
         conversation = self._format_chat(text, self.audio_token)

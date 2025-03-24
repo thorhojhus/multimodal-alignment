@@ -55,7 +55,11 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         from transformers import AutoFeatureExtractor
         processor = AutoFeatureExtractor.from_pretrained("kyutai/mimi")
     else:
-        processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+        try:
+            processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
+        except:
+            from transformers import AutoFeatureExtractor
+            processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
     
     dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
