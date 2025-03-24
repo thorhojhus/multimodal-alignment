@@ -59,10 +59,6 @@ class BiCodecTokenizer(nn.Module):
 
         outs = self.audio_embedding(tokens)
         
-        outs = outs.permute(0,2,1) # swap last two dimensions
-        outs = nn.AdaptiveAvgPool1d(seq_len//10)(outs)
-        outs = outs.permute(0,2,1) # swap back
-
         return outs
 
 if __name__ == "__main__":

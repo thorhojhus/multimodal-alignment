@@ -56,4 +56,5 @@ class BiCodecWrapper(nn.Module):
             "feat": feat.to(self.device),
         }
         semantic_tokens = self.bicodec.tokenize(batch)
+        
         return semantic_tokens
