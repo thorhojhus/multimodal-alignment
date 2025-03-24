@@ -1,13 +1,14 @@
 import functools
 import logging
 import time
+from accelerate.utils.memory import find_executable_batch_size
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import hydra
+from omegaconf import DictConfig
 import torch
 import wandb
-from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
 from peft import inject_adapter_in_model, LoraConfig
@@ -36,7 +37,9 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, cfg: DictConfig) -> None:
+@find_executable_batch_size(starting_batch_size=128)
+def train(batch_size, model: torch.nn.Module, cfg: DictConfig) -> None:
+    print(f"|Training with batch size {batch_size}|")
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -87,11 +90,11 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     
     dataloader = DataLoader(
         dataset, 
-        batch_size=cfg.training.batch_size, 
+        batch_size=batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
         shuffle=True,
-        num_workers=8,
-        prefetch_factor=4,
+        num_workers= 0,  # 8,
+        # prefetch_factor=4,
         pin_memory=True
     )
     
@@ -205,7 +208,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     tokenizer=model.tokenizer,
                     logger=logger,
                     n_samples=cfg.eval.n_samples,
-                    batch_size=cfg.eval.batch_size or cfg.training.batch_size
+                    batch_size=cfg.eval.batch_size or batch_size
                 )
                 
                 # run WER/CER evaluation
@@ -216,7 +219,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     logger=logger,
                     n_samples=cfg.eval.n_samples,
                     config=cfg,
-                    batch_size=cfg.eval.batch_size or cfg.training.batch_size
+                    batch_size=cfg.eval.batch_size or batch_size
                 )
                 
                 logger.info(
@@ -276,7 +279,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 "eval/epoch_loss": eval_loss,
                 "eval/epoch_wer": wer,
                 "eval/epoch_cer": cer
-            })
+                })
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):
@@ -314,7 +317,7 @@ def main(cfg: DictConfig):
 
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-
+        
     train(model, cfg)
 
 if __name__ == "__main__":
