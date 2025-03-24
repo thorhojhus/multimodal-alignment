@@ -112,7 +112,7 @@ def train_multiple(cfg: DictConfig) -> None:
                     'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
                 }
             else:
-                # for other models (Whisper, CLAP, wav2vec)
+                # for other models (Whisper, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)

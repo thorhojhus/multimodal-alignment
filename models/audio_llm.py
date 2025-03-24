@@ -123,7 +123,6 @@ class AudioLLMModel(nn.Module):
                 audio_encoded = self.audio_encoder(audio_features).last_hidden_state
             else:
                 audio_encoded = self.audio_encoder(audio_features).audio_codes
-            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
         return self.projector(audio_encoded)
     
     def _combine_embeddings(

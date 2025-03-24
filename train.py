@@ -137,7 +137,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                     # fallback
                     audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
             else:
-                # for other models (Whisper, CLAP, wav2vec)
+                # for other models (Whisper, wav2vec)
                 audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
             labels = batch["labels"].to("cuda", non_blocking=True)
             alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
