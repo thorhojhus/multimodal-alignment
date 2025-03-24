@@ -1,6 +1,8 @@
 outputs
 .vscode
 .*
+weights/
+tts-wavs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
