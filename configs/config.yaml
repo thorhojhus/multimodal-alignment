@@ -5,6 +5,7 @@ hydra:
 wandb:
   enabled: false
   run_name: "default"
+  upload_audio: false
 
 model:
   downsample_factor: 10

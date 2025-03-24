@@ -1,3 +1,5 @@
+import tempfile
+import torchaudio
 import functools
 import logging
 import os
@@ -7,6 +9,23 @@ from dataset.audio_dataset import collate_fn
 import jiwer
 import wandb
 from typing import Tuple, List
+
+def save_to_temp_mp3(waveform: torch.Tensor, sample_rate: int):
+    # Create a temporary file with .mp3 suffix, not deleted automatically
+    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+        temp_path = temp_file.name
+        
+    if len(waveform.shape) == 1:
+        waveform = waveform.unsqueeze(0)
+        waveform = waveform.t()
+
+    writer = torchaudio.io.StreamWriter(temp_path, format="mp3")
+    writer.add_audio_stream(sample_rate, num_channels=1, format="flt")
+    
+    with writer.open():
+        writer.write_audio_chunk(0, waveform)
+    return temp_path
+
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -218,12 +237,13 @@ def run_evaluation(
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
-        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T),
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T, include_raw_audio=True),
         shuffle=True
     )
     
     all_generated = []
     all_ground_truths = []
+    all_audio = []
     samples_processed = 0
 
     logger.info("Generating predictions...")
@@ -243,19 +263,25 @@ def run_evaluation(
             
         all_generated.extend(generated_texts)
         all_ground_truths.extend(ground_truths)
+        all_audio.extend(batch["raw_audio"])
         samples_processed += len(generated_texts)
 
     logger.info("Calculating metrics...")
-    wer, cer = calculate_metrics(all_generated, all_ground_truths)
-    
+    wer, cer = calculate_metrics(all_generated, all_ground_truths) 
+
     logger.info(f"Results over {len(all_generated)} samples:")
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
     logger.info(f"Character Error Rate (CER): {cer:.4f}")
-    
+
     if config.wandb.enabled:
-            eval_table = wandb.Table(columns=["Generated", "Ground Truth"])
-            for gen, gt in zip(all_generated, all_ground_truths):
-                eval_table.add_data(gen, gt)
+            if config.wandb.upload_audio:
+                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "Audio"])
+                for gen, gt, audiowav in zip(all_generated, all_ground_truths, all_audio):
+                    eval_table.add_data(gen, gt, wandb.Audio(save_to_temp_mp3(audiowav, 16000), sample_rate=16000, caption="Speech"))
+            else:
+                eval_table = wandb.Table(columns=["Generated", "Ground Truth"])
+                for gen, gt in zip(all_generated, all_ground_truths):
+                    eval_table.add_data(gen, gt)
             wandb.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()
