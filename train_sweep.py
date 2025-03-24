@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def setup_wandb(runtime_config: DictConfig) -> None:
     wandb.init(
         entity="borkeren",
-        project="vocab-size-sweep",
+        project="cnn-downsample-factor-sweep",
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}"
              if runtime_config.wandb.run_name == "default"
              else runtime_config.wandb.run_name,
@@ -35,9 +35,9 @@ def train_multiple(cfg: DictConfig) -> None:
     if cfg.wandb.enabled:
         setup_wandb(cfg)
     OmegaConf.update(cfg, "model.downsample_factor", wandb.config["downsample_factor"])
-    wandb.run.name = f"downsample-factor-sweep ({wandb.config['downsample_factor']})"
+    wandb.run.name = f"CNN downsample-factor-sweep ({wandb.config['downsample_factor']})"
     model = AudioLLMModel(cfg)
-    summary(model)
+    print(summary(model.projector))
     
     # freeze non-trainable components
     for param in model.lm.parameters():
@@ -260,11 +260,11 @@ def main(cfg: DictConfig):
         "method": "grid",
         "metric": {"name": "eval/loss", "goal": "minimize"},
         "parameters": {
-            "downsample_factor": {"values": [2, 5, 8, 10, 12, 15, 20, 25, 35, 50]}
+            "downsample_factor": {"values": [2, 4, 6, 8, 10, 12, 15, 20]}
         }
     }
 
-    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="vocab-size-sweep")
+    sweep_id = wandb.sweep(sweep_config, entity="borkeren", project="cnn-downsample-factor-sweep")
 
     wandb.agent(sweep_id, function=functools.partial(train_multiple, cfg=cfg))
 
