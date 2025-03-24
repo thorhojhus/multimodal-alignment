@@ -2,7 +2,6 @@ from typing import Optional
 import torch
 from torch import nn, Tensor
 from torch.nn import init
-from torch.nn.functional import softmax
 
 class AudioEmbedding(torch.nn.Embedding):
     """Embedding layer for audio tokens, similar to VisualEmbedding in Ovis."""
@@ -42,15 +41,6 @@ class BiCodecTokenizer(nn.Module):
             device=self.device,
             dtype=dtype
         )
-        self.downsample = nn.Sequential(nn.Conv1d(
-            in_channels=embed_dim,
-            out_channels=embed_dim,
-            kernel_size=10,
-            stride=10,
-            groups=embed_dim,
-            device=self.device,
-            dtype=dtype
-        ), nn.SiLU())
 
         # nn.LayerNorm(vocab_size, device=self.device, dtype=dtype)
         
@@ -65,10 +55,14 @@ class BiCodecTokenizer(nn.Module):
         Returns:
             Tensor: Embedded audio tokens [batch_size, seq_len, embed_dim]
         """
+        _, seq_len = tokens.shape
+
         outs = self.audio_embedding(tokens)
-        outs = outs.transpose(1,2)
-        outs = self.downsample(outs)
-        outs = outs.transpose(1,2)
+        
+        outs = outs.permute(0,2,1) # swap last two dimensions
+        outs = nn.AdaptiveAvgPool1d(seq_len//10)(outs)
+        outs = outs.permute(0,2,1) # swap back
+
         return outs
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import os
 import torch
 from transformers import AutoModel
 from transformers import WhisperModel
@@ -66,7 +67,9 @@ class EncoderWrapper(AutoModel):
                 )
             case EncoderEnum.BICODEC:
                 from models.bicodec_wav2vec_wrapper import BiCodecWrapper
-                encoder = BiCodecWrapper(bicodec_dir="/work3/s224233/shared/multimodal-alignment/weights/BiCodec", wav2vec_model="facebook/wav2vec2-large-xlsr-53").to("cuda", torch.bfloat16)
+                encoder = BiCodecWrapper(
+                    bicodec_dir=f"{os.environ["HF_HOME"]}/BiCodec",
+                    wav2vec_model="facebook/wav2vec2-large-xlsr-53").to("cuda", torch.bfloat16)
 
 
         # freeze encoder params

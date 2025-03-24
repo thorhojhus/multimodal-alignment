@@ -1,3 +1,4 @@
+import os
 import torch 
 import torch.nn as nn
 from sparktts.models.bicodec import BiCodec
@@ -29,7 +30,7 @@ class BiCodecInherit(BiCodec):
         return semantic_tokens
 
 class BiCodecWrapper(nn.Module):
-    def __init__(self, bicodec_dir="weights/BiCodec", wav2vec_model="facebook/wav2vec2-large-xlsr-53"):
+    def __init__(self, bicodec_dir=f"{os.environ["HF_HOME"]}/BiCodec", wav2vec_model="facebook/wav2vec2-large-xlsr-53"):
         super(BiCodecWrapper, self).__init__()
         self.bicodec = BiCodecInherit.load_from_checkpoint(bicodec_dir).to("cuda", torch.bfloat16)
         self.processor = Wav2Vec2FeatureExtractor.from_pretrained(wav2vec_model)

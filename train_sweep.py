@@ -57,6 +57,7 @@ def train_multiple(cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg
     )
     
     test_dataset = AudioChatDataset(
@@ -66,6 +67,7 @@ def train_multiple(cfg: DictConfig) -> None:
         tokenizer=model.tokenizer,
         processor=processor,
         T=cfg.model.token_length,
+        config=cfg
     )
     
     print_parameter_count(model, logger)
