@@ -399,7 +399,7 @@ def run_evaluation_with_loss(
         tokenizer=tokenizer,
         logger=logger,
         n_samples=n_samples,
-        batch_size=config.eval.batch_size,
+        batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
     wer, cer = run_evaluation(
@@ -409,7 +409,7 @@ def run_evaluation_with_loss(
         logger=logger,
         n_samples=n_samples,
         config=config,
-        batch_size=config.eval.batch_size
+        batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
     return eval_loss, wer, cer
