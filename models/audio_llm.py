@@ -28,7 +28,7 @@ class AudioLLMModel(nn.Module):
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
-        elif self.config.model.encoder_model_name == "BiCodec":
+        elif (self.config.model.encoder_model_name == "BiCodec") and (not self.config.model.use_expanded_vocab):
             self.projector = self._create_bicodec_tokenizer()
         else:
             self.projector = self._create_projector(config.model.projector)
@@ -87,29 +87,13 @@ class AudioLLMModel(nn.Module):
 
 
     def _create_bicodec_tokenizer(self):
-        if self.config.model.use_expanded_vocab:
-            from models.bicodec_expanded_tokenizer import BiCodecExpandedTokenizer
-            # Create expanded tokenizer (will use token IDs directly)
-            self.bicodec_expanded_tokenizer = BiCodecExpandedTokenizer(
-                vocab_size=8192,
-                dtype=torch.bfloat16,
-                device="cuda"
-            )
-            # Return standard tokenizer for backward compatibility
-            from models.bicodec_tokenizer import BiCodecTokenizer
-            embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-            return BiCodecTokenizer(vocab_size=8192, 
-                                     embed_dim=embed_dim,
-                                     dtype=torch.bfloat16,
-                                     device="cuda")
-        else:
-            # Standard BiCodec tokenizer for embedding approach
-            from models.bicodec_tokenizer import BiCodecTokenizer
-            embed_dim = self.lm.get_input_embeddings().weight.shape[1]
-            return BiCodecTokenizer(vocab_size=8192, 
-                                    embed_dim=embed_dim,
-                                    dtype=torch.bfloat16,
-                                    device="cuda")
+        # Standard BiCodec tokenizer for embedding approach
+        from models.bicodec_tokenizer import BiCodecTokenizer
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return BiCodecTokenizer(vocab_size=8192, 
+                                embed_dim=embed_dim,
+                                dtype=torch.bfloat16,
+                                device="cuda")
 
     def _create_mimi_tokenizer(self):
         from models.mimi_tokenizer import MimiTokenizer
@@ -205,15 +189,11 @@ class AudioLLMModel(nn.Module):
         # When using expanded vocab with BiCodec, extract discrete tokens
         if self.config.model.use_expanded_vocab and "BiCodec" in self.config.model.encoder_model_name:
             # Extract discrete tokens using the expanded tokenizer
-            discrete_tokens = self.bicodec_expanded_tokenizer(audio_features)
+            discrete_tokens = self.audio_encoder(audio_features)
             
-            # Also process audio through standard pathway for backward compatibility
-            with torch.no_grad():
-                audio_encoded = self.audio_encoder(audio_features)
-                audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+            breakpoint()
             
-            projected_embeds = self.projector(audio_encoded)
-            return projected_embeds, discrete_tokens
+            return discrete_tokens
         
         # Standard processing pathway (no discrete tokens)
         with torch.no_grad():
@@ -372,8 +352,7 @@ class AudioLLMModel(nn.Module):
         
         # Handling for expanded vocabulary approach
         using_discrete_tokens = (self.config.model.use_expanded_vocab and 
-                              "BiCodec" in self.config.model.encoder_model_name and
-                              isinstance(audio_embeds, tuple))
+                              "BiCodec" in self.config.model.encoder_model_name)
         
         # Combine embeddings and get padded sequences
         combined_lists = self._combine_embeddings(
@@ -382,7 +361,7 @@ class AudioLLMModel(nn.Module):
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
 
         # For discrete tokens with expanded vocab, we need to modify the input_ids
-        if using_discrete_tokens and hasattr(self, "_audio_token_indices") and self._audio_token_indices:
+        if using_discrete_tokens:
             # Create new input_ids to replace <|audio|> tokens with discrete tokens
             modified_input_ids = []
             modified_attention_mask = []
