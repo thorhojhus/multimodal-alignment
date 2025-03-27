@@ -29,5 +29,5 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=BiCodec training.batch_size=8 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=bicodec-gemma-2b-avgpool-downsample-test
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 training.batch_size=64 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=gemma-9b-hviske-v2-dynamic-batchsize
 #python train.py
