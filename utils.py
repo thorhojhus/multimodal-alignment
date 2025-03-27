@@ -9,6 +9,7 @@ from dataset.audio_dataset import collate_fn
 import jiwer
 import wandb
 from typing import Tuple, List
+from accelerate.utils.memory import find_executable_batch_size
 
 def save_to_temp_mp3(waveform: torch.Tensor, sample_rate: int):
     # Create a temporary file with .mp3 suffix, not deleted automatically
@@ -232,7 +233,6 @@ def run_evaluation(
         n_samples = len(test_dataset)
     else:
         n_samples = min(n_samples, len(test_dataset))
-    logger.info(f"Evaluating on {n_samples} samples with batch size {batch_size}")
     
     test_loader = DataLoader(
         test_dataset,
@@ -318,7 +318,6 @@ def calculate_eval_loss(
         n_samples = len(test_dataset)
     else:
         n_samples = min(n_samples, len(test_dataset))
-    logger.info(f"Calculating evaluation loss on {n_samples} samples with batch size {batch_size}")
     
     test_loader = DataLoader(
         test_dataset,
@@ -398,6 +397,7 @@ def calculate_eval_loss(
 
 
 def run_evaluation_with_loss(
+    batch_size: int,
     model: torch.nn.Module,
     test_dataset: torch.utils.data.Dataset,
     tokenizer,
@@ -419,23 +419,28 @@ def run_evaluation_with_loss(
     Returns:
         Tuple of (eval_loss, WER, CER) metrics
     """
-    eval_loss = calculate_eval_loss(
-        model=model,
-        test_dataset=test_dataset,
-        tokenizer=tokenizer,
-        logger=logger,
-        n_samples=n_samples,
-        batch_size=config.eval.batch_size or config.training.batch_size,
-    )
+    @find_executable_batch_size(batch_size=batch_size)
+    def _eval_wrapper(batch_size: int) -> tuple[float, float, float]:
+        logger.info(f"Calculating evaluation loss on {n_samples} samples with batch size {batch_size}")
+        eval_loss = calculate_eval_loss(
+            model=model,
+            test_dataset=test_dataset,
+            tokenizer=tokenizer,
+            logger=logger,
+            n_samples=n_samples,
+            batch_size=batch_size,
+        )
+        
+        wer, cer = run_evaluation(
+            model=model,
+            test_dataset=test_dataset,
+            tokenizer=tokenizer,
+            logger=logger,
+            n_samples=n_samples,
+            config=config,
+            batch_size=batch_size,
+        )
+        
+        return eval_loss, wer, cer
     
-    wer, cer = run_evaluation(
-        model=model,
-        test_dataset=test_dataset,
-        tokenizer=tokenizer,
-        logger=logger,
-        n_samples=n_samples,
-        config=config,
-        batch_size=config.eval.batch_size or config.training.batch_size,
-    )
-    
-    return eval_loss, wer, cer
+    return _eval_wrapper()

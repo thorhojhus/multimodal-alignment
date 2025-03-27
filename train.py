@@ -37,15 +37,10 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-@find_executable_batch_size(starting_batch_size=128)
-def train(batch_size, model: torch.nn.Module, cfg: DictConfig) -> None:
-    print(f"|Training with batch size {batch_size}|")
+def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    
-    # initialize best evaluation loss for checkpoint saving
-    best_eval_loss = float('inf')
 
     # create dataset and processor
     if ("w2v-bert" in cfg.model.encoder_model_name):
@@ -85,201 +80,198 @@ def train(batch_size, model: torch.nn.Module, cfg: DictConfig) -> None:
     trainable_params = [
         {"params": list(model.projector.parameters())},
     ]
-    
-    optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
-    
-    dataloader = DataLoader(
-        dataset, 
-        batch_size=batch_size, 
-        collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
-        shuffle=True,
-        num_workers= 8,
-        prefetch_factor=4,
-        pin_memory=True
-    )
-    
-    # calculate total number of training steps
-    total_steps = len(dataloader) * cfg.training.num_epochs
-    
-    # create the scheduler using warmup_steps from config
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=cfg.training.warmup_steps,
-        num_training_steps=total_steps
-    )
 
-    # load checkpoint if specified
-    global_step = 0
-    if cfg.training.resume_from_checkpoint:
-        global_step, _ = load_checkpoint(
-            [model.projector], optimizer, scheduler,
-            cfg.training.resume_checkpoint_path, logger,
-            load_lr_from_checkpoint=cfg.training.load_lr_from_checkpoint
+    @find_executable_batch_size(starting_batch_size=cfg.training.batch_size)
+    def _train(batch_size: int) -> None:
+        """Training Loop"""
+        logger.info(f"|Training with batch size {batch_size}|")
+        optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
+        dataloader = DataLoader(
+            dataset, 
+            batch_size=batch_size, 
+            collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
+            shuffle=True,
+            num_workers= 8,
+            prefetch_factor=4,
+            pin_memory=True
         )
-        logger.info(f"Resuming training from step {global_step}")
-    
-    for epoch in range(cfg.training.num_epochs):
-        model.train()
-        total_loss = 0
-        epoch_start_time = time.monotonic()
-        batch_start_time = time.monotonic()
         
-        for batch_idx, batch in enumerate(dataloader):
-            # move data to GPU
-            input_ids = batch["input_ids"].to("cuda", non_blocking=True)
-            if isinstance(batch["audio_features"], dict):
-                if "input_features" in batch["audio_features"]:
-                    # for wav2vec-bert/seamless models
-                    audio_features = {
-                        'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
-                        'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
-                    }
-                elif "input_values" in batch["audio_features"]:
-                    # for Mimi models
-                    audio_features = {
-                        'input_values': batch["audio_features"]["input_values"].to("cuda", torch.bfloat16, non_blocking=True)
-                    }
-                else:
-                    # fallback
-                    audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
-            else:
-                # for other models (Whisper, CLAP, wav2vec)
-                audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
-            labels = batch["labels"].to("cuda", non_blocking=True)
-            alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
-            alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
-            alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
-            attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
-            insertion_indices = batch["insertion_indices"]
-            text_ids = batch["text_ids"].to("cuda", non_blocking=True)
-            
-            # forward pass
-            outputs = model(
-                input_ids=input_ids,
-                audio_features=audio_features,
-                labels=labels,
-                alt_input_ids=alt_input_ids,
-                alt_labels=alt_labels,
-                alt_attention_mask=alt_attention_mask,
-                attention_mask=attention_mask,
-                insertion_indices=insertion_indices,
-                text_ids=text_ids
+        # calculate total number of training steps
+        total_steps = len(dataloader) * cfg.training.num_epochs
+        
+        # create the scheduler using warmup_steps from config
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=cfg.training.warmup_steps,
+            num_training_steps=total_steps
+        )
+
+        # load checkpoint if specified
+        global_step = 0
+        if cfg.training.resume_from_checkpoint:
+            global_step, _ = load_checkpoint(
+                [model.projector], optimizer, scheduler,
+                cfg.training.resume_checkpoint_path, logger,
+                load_lr_from_checkpoint=cfg.training.load_lr_from_checkpoint
             )
+            logger.info(f"Resuming training from step {global_step}")
+        
+        # initialize best evaluation loss for checkpoint saving
+        best_eval_loss = float('inf')
 
-            # backward pass
-            loss = outputs.loss
-            loss.backward()
-            
-            # optimizer and scheduler steps
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
-            
-            total_loss += loss.item()
-            global_step += 1
-            
-            # calculate batch time
-            batch_time = time.monotonic() - batch_start_time
-            
-            if global_step % cfg.training.log_every_n_steps == 0:
-                current_lr = scheduler.get_last_lr()[0]
-                memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
-                memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
-                #torch.cuda.empty_cache()
-                logger.info(
-                    f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
-                    f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
-                    f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
-                )
-                if cfg.wandb.enabled:
-                    wandb.log({
-                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
-                    })
-            
-
-            # run evaluation and loss calculation if needed
-            if global_step % cfg.training.evaluate_every_n_steps == 0:
-                logger.info("\nRunning evaluation at step %d", global_step)
-                
-                # calculate evaluation loss
-                eval_loss = calculate_eval_loss(
-                    model=model,
-                    test_dataset=test_dataset,
-                    tokenizer=model.tokenizer,
-                    logger=logger,
-                    n_samples=cfg.eval.n_samples,
-                    batch_size=cfg.eval.batch_size or batch_size
-                )
-                
-                # run WER/CER evaluation
-                wer, cer = run_evaluation(
-                    model=model,
-                    test_dataset=test_dataset,
-                    tokenizer=model.tokenizer,
-                    logger=logger,
-                    n_samples=cfg.eval.n_samples,
-                    config=cfg,
-                    batch_size=cfg.eval.batch_size or batch_size
-                )
-                
-                logger.info(
-                    f"Step {global_step} Evaluation | "
-                    f"Eval Loss: {eval_loss:.4f} | "
-                    f"WER: {wer:.2f} | CER: {cer:.2f}"
-                )
-                if cfg.wandb.enabled:
-                    wandb.log({
-                        "eval/loss": eval_loss,
-                        "eval/wer": wer,
-                        "eval/cer": cer
-                    })
-
-            # reset batch timer
+        for epoch in range(cfg.training.num_epochs):
+            model.train()
+            total_loss = 0
+            epoch_start_time = time.monotonic()
             batch_start_time = time.monotonic()
-        
-        # calculate epoch statistics
-        avg_loss = total_loss / len(dataloader)
-        epoch_time = time.monotonic() - epoch_start_time
-        avg_batch_time = epoch_time / len(dataloader)
-        
-        # end of epoch evaluation
-        logger.info("\nRunning end of epoch evaluation")
-        eval_loss, wer, cer = run_evaluation_with_loss(
-            model=model, 
-            test_dataset=test_dataset, 
-            tokenizer=model.tokenizer, 
-            logger=logger, 
-            n_samples=None, 
-            config=cfg
-        )
-        
-        # save checkpoint at end of epoch (always latest, and best if applicable)
-        is_best = False
-        if epoch == 0 or eval_loss < best_eval_loss:
-            best_eval_loss = eval_loss
-            is_best = True
             
-        save_checkpoint(
-            [model.projector], optimizer, scheduler,
-            global_step, eval_loss, 
-            cfg.training.checkpoint_dir, logger, is_best
-        )
+            for batch_idx, batch in enumerate(dataloader):
+                # move data to GPU
+                input_ids = batch["input_ids"].to("cuda", non_blocking=True)
+                if isinstance(batch["audio_features"], dict):
+                    if "input_features" in batch["audio_features"]:
+                        # for wav2vec-bert/seamless models
+                        audio_features = {
+                            'input_features': batch["audio_features"]["input_features"].to("cuda", torch.bfloat16, non_blocking=True),
+                            'attention_mask': batch["audio_features"]["attention_mask"].to("cuda", non_blocking=True)
+                        }
+                    elif "input_values" in batch["audio_features"]:
+                        # for Mimi models
+                        audio_features = {
+                            'input_values': batch["audio_features"]["input_values"].to("cuda", torch.bfloat16, non_blocking=True)
+                        }
+                    else:
+                        # fallback
+                        audio_features = {k: v.to("cuda", torch.bfloat16, non_blocking=True) for k, v in batch["audio_features"].items()}
+                else:
+                    # for other models (Whisper, CLAP, wav2vec)
+                    audio_features = batch["audio_features"].to("cuda", torch.bfloat16, non_blocking=True)
+                labels = batch["labels"].to("cuda", non_blocking=True)
+                alt_input_ids = batch["alt_input_ids"].to("cuda", non_blocking=True)
+                alt_labels = batch["alt_labels"].to("cuda", non_blocking=True)
+                alt_attention_mask = batch["alt_attention_mask"].to("cuda", non_blocking=True)
+                attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
+                insertion_indices = batch["insertion_indices"]
+                text_ids = batch["text_ids"].to("cuda", non_blocking=True)
+                
+                # forward pass
+                outputs = model(
+                    input_ids=input_ids,
+                    audio_features=audio_features,
+                    labels=labels,
+                    alt_input_ids=alt_input_ids,
+                    alt_labels=alt_labels,
+                    alt_attention_mask=alt_attention_mask,
+                    attention_mask=attention_mask,
+                    insertion_indices=insertion_indices,
+                    text_ids=text_ids
+                )
+
+                # backward pass
+                loss = outputs.loss
+                loss.backward()
+                
+                # optimizer and scheduler steps
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                
+                total_loss += loss.item()
+                global_step += 1
+                
+                # calculate batch time
+                batch_time = time.monotonic() - batch_start_time
+                
+                if global_step % cfg.training.log_every_n_steps == 0:
+                    current_lr = scheduler.get_last_lr()[0]
+                    memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
+                    memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
+                    #torch.cuda.empty_cache()
+                    logger.info(
+                        f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
+                        f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
+                        f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
+                    )
+                    if cfg.wandb.enabled:
+                        wandb.log({
+                            "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                        })
+                
+
+                # run evaluation and loss calculation if needed
+                if global_step % cfg.training.evaluate_every_n_steps == 0:
+                    logger.info("\nRunning evaluation at step %d", global_step)
+
+                    eval_loss, wer, cer = run_evaluation_with_loss(
+                        batch_size,
+                        model=model,
+                        test_dataset=test_dataset,
+                        tokenizer=model.tokenizer,
+                        logger=logger,
+                        n_samples=cfg.eval.n_samples,
+                        config=cfg
+                    )
+                    
+                    logger.info(
+                        f"Step {global_step} Evaluation | "
+                        f"Eval Loss: {eval_loss:.4f} | "
+                        f"WER: {wer:.2f} | CER: {cer:.2f}"
+                    )
+                    if cfg.wandb.enabled:
+                        wandb.log({
+                            "eval/loss": eval_loss,
+                            "eval/wer": wer,
+                            "eval/cer": cer
+                        })
+
+                # reset batch timer
+                batch_start_time = time.monotonic()
             
-        logger.info(
-            f"Epoch {epoch+1} Summary | "
-            f"Average Train Loss: {avg_loss:.4f} | "
-            f"Eval Loss: {eval_loss:.4f} | "
-            f"WER: {wer:.2f} | CER: {cer:.2f} | "
-            f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
-            f"Average Batch Time: {avg_batch_time:.2f}s"
-        )
-        if cfg.wandb.enabled:
-            wandb.log({
-                "train/epoch_loss": avg_loss,
-                "eval/epoch_loss": eval_loss,
-                "eval/epoch_wer": wer,
-                "eval/epoch_cer": cer
-                })
+            # calculate epoch statistics
+            avg_loss = total_loss / len(dataloader)
+            epoch_time = time.monotonic() - epoch_start_time
+            avg_batch_time = epoch_time / len(dataloader)
+            
+            # end of epoch evaluation
+            logger.info("\nRunning end of epoch evaluation")
+            eval_loss, wer, cer = run_evaluation_with_loss(
+                model=model, 
+                test_dataset=test_dataset, 
+                tokenizer=model.tokenizer, 
+                logger=logger, 
+                n_samples=None, 
+                config=cfg
+            )
+            
+            # save checkpoint at end of epoch (always latest, and best if applicable)
+            is_best = False
+            if epoch == 0 or eval_loss < best_eval_loss:
+                best_eval_loss = eval_loss
+                is_best = True
+                
+            save_checkpoint(
+                [model.projector], optimizer, scheduler,
+                global_step, eval_loss, 
+                cfg.training.checkpoint_dir, logger, is_best
+            )
+                
+            logger.info(
+                f"Epoch {epoch+1} Summary | "
+                f"Average Train Loss: {avg_loss:.4f} | "
+                f"Eval Loss: {eval_loss:.4f} | "
+                f"WER: {wer:.2f} | CER: {cer:.2f} | "
+                f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
+                f"Average Batch Time: {avg_batch_time:.2f}s"
+            )
+            if cfg.wandb.enabled:
+                wandb.log({
+                    "train/epoch_loss": avg_loss,
+                    "eval/epoch_loss": eval_loss,
+                    "eval/epoch_wer": wer,
+                    "eval/epoch_cer": cer
+                    })
+    
+    _train()
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(cfg: DictConfig):
@@ -317,7 +309,7 @@ def main(cfg: DictConfig):
 
     if cfg.wandb.enabled:
         setup_wandb(cfg)
-        
+    
     train(model, cfg)
 
 if __name__ == "__main__":
