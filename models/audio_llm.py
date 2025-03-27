@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from models.encoders import EncoderWrapper
 from models.UltravoxProjector import Projector
 from models.LinearProjector import LinearProjector
+from models.rvqvae import RVQVAE
 from models.tinyalign import BridgeFormer
 
 
@@ -33,6 +34,13 @@ class AudioLLMModel(nn.Module):
         else:
             self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
+        if self.config.model.use_rvq:
+            self.rvq = RVQVAE(
+                embed_dim=self.audio_encoder.get_proj_dim(),
+                codebook_size=8096,
+                n_q=8
+            ).to("cuda", torch.bfloat16)
+        
         # setup special tokens
         self.audio_token_str = "<|audio|>"
         self._add_special_token()
@@ -144,6 +152,8 @@ class AudioLLMModel(nn.Module):
             else:
                 audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
+            if self.config.model.use_rvq:
+                audio_encoded, _, = self.rvq(audio_encoded)
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
 
         return self.projector(audio_encoded)

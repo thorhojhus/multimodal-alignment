@@ -19,6 +19,7 @@ model:
   train_llm: false
   train_encoder: false
   use_sparktts: true
+  use_rvq: true
 
 training:
   num_epochs: 3

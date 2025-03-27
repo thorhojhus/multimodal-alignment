@@ -225,7 +225,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
             else:
                 raise ValueError(f"Unsupported audio format: {type(audio)}")
 
-
         audio_features = self._audio_to_features(audio_array, audio_sampling_rate)
         # format as chat
         conversation = self._format_chat(text, self.audio_token)
@@ -329,7 +328,7 @@ def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
     alt_input_ids = []
     alt_labels = []
     alt_attention_mask = []
-    
+
     for item in batch:
         # pad input_ids and labels
         pad_len = max_len - len(item["input_ids"])
@@ -445,7 +444,7 @@ def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
     prepared_input_ids, prepared_attention_mask, prepared_labels, prepared_insertion_indices = prepare_inputs(
         input_ids, labels, tokenizer
     )
-    
+
     return {
         "input_ids": prepared_input_ids,
         "audio_features": audio_features,

@@ -20,3 +20,4 @@ jupyter
 sentencepiece
 torchinfo
 peft
+vector_quantize_pytorch
