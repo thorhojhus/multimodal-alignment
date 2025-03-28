@@ -14,7 +14,6 @@ from torch.nn import functional as F
 from models.encoders import EncoderWrapper
 from models.UltravoxProjector import Projector
 from models.LinearProjector import LinearProjector
-from models.rvqvae import RVQVAE
 from models.tinyalign import BridgeFormer
 
 
@@ -25,7 +24,9 @@ class AudioLLMModel(nn.Module):
         # create model components
         self.lm = self._create_lm()
         self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
-        if self.config.model.audio_tokenizer:
+        if self.config.model.audio_tokenizer and "rvq" in self.config.model.audio_tokenizer:
+            self.projector = self._create_rvq_tokenizer()
+        elif self.config.model.audio_tokenizer:
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
@@ -34,12 +35,6 @@ class AudioLLMModel(nn.Module):
         else:
             self.projector = self._create_projector(config.model.projector)
         self.tokenizer = self._setup_tokenizer()
-        if self.config.model.use_rvq:
-            self.rvq = RVQVAE(
-                embed_dim=self.audio_encoder.get_proj_dim(),
-                codebook_size=8096,
-                n_q=8
-            ).to("cuda", torch.bfloat16)
         
         # setup special tokens
         self.audio_token_str = "<|audio|>"
@@ -77,7 +72,18 @@ class AudioLLMModel(nn.Module):
                                      embed_dim=embed_dim, 
                                      hidden_stride=self.config.model.downsample_factor,
                                      d_model=whisper_dim)
-
+    
+    def _create_rvq_tokenizer(self):
+        from models.rvq_tokenizer import VectorQuantization
+        encoder_dim = self.audio_encoder.get_proj_dim()
+        embed_dim = self.lm.get_input_embeddings().weight.shape[1]
+        return VectorQuantization(
+            encoding_dim=encoder_dim,
+            codebook_size=8096,
+            embedding_dim=embed_dim,
+            dtype=torch.bfloat16,
+            projector=self._create_projector(self.config.model.projector)
+        ).to("cuda", torch.bfloat16)
 
     def _create_lm(self) -> nn.Module:
         # set quantization configuration
@@ -113,7 +119,7 @@ class AudioLLMModel(nn.Module):
             param.requires_grad = False
         return lm
 
-    def _create_projector(self, type: Literal["simple", "tinyalign"]) -> Projector:
+    def _create_projector(self, type: Literal["simple", "tinyalign", "conv", "linear"]) -> Projector:
         # get dimensions for projector
         encoder_dim = self.audio_encoder.get_proj_dim()
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
@@ -152,8 +158,6 @@ class AudioLLMModel(nn.Module):
             else:
                 audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
-            if self.config.model.use_rvq:
-                audio_encoded, _, = self.rvq(audio_encoded)
             audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
 
         return self.projector(audio_encoded)
