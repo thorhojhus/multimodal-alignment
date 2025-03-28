@@ -18,6 +18,7 @@ class EncoderEnum(Enum):
     WAV2VEC_LARGE_xlsr_53 = "facebook/wav2vec2-large-xlsr-53"
     WAV2VEC_LARGE = "facebook/wav2vec2-large"
     WAV2VECBERT = "facebook/w2v-bert-2.0"
+    WAV2VEC2_LV60_ESPEAK_CV_FT = "facebook/wav2vec2-lv-60-espeak-cv-ft"
     MIMI = "kyutai/mimi"
     BICODEC = "BiCodec"
 
@@ -47,7 +48,7 @@ class EncoderWrapper(AutoModel):
                     device_map=None
                 )
                 encoder = model.audio_model.audio_encoder.to("cuda")
-            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53:
+            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53 | EncoderEnum.WAV2VEC2_LV60_ESPEAK_CV_FT:
                 encoder = Wav2Vec2Model.from_pretrained(
                     self.encoder_type.value,
                     attn_implementation="flash_attention_2",
@@ -88,7 +89,7 @@ class EncoderWrapper(AutoModel):
                 return self.audio_encoder.config.d_model
             case EncoderEnum.CLAP: 
                 return self.audio_encoder.config.hidden_size # hidden_size is output shape _before_ the _models_ projection layer, which we do not use in favor of our own.
-            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VECBERT |EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53:
+            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VECBERT |EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53 | EncoderEnum.WAV2VEC2_LV60_ESPEAK_CV_FT:
                 return self.audio_encoder.config.hidden_size
             case EncoderEnum.MIMI:
                 # For Mimi, no projection dimension needed as we handle the tokens directly with MimiTokenizer
@@ -104,7 +105,7 @@ class EncoderWrapper(AutoModel):
             case EncoderEnum.CLAP:
                 B, D, _, _ = audio_encoded.size()
                 return audio_encoded.permute(0, 2, 3, 1).reshape(B, -1, D)
-            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VECBERT | EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53:
+            case EncoderEnum.WAV2VEC_BASE_960h | EncoderEnum.WAV2VECBERT | EncoderEnum.WAV2VEC_LARGE | EncoderEnum.WAV2VEC_LARGE_xlsr_53 | EncoderEnum.WAV2VEC2_LV60_ESPEAK_CV_FT:
                 return audio_encoded
             case EncoderEnum.MIMI:
                 # Mimi encoder outputs audio codes in shape [batch_size, 32, seq_len]

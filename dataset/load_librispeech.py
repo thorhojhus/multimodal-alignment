@@ -20,5 +20,9 @@ librispeech_dataset_dict['train'] = concatenate_datasets([
     librispeech_dataset_dict['train.other.500']
 ])
 
+librispeech_dataset_dict['test'] = concatenate_datasets([
+    librispeech_dataset_dict['test.clean']
+])
+
 if __name__ == "__main__":
     breakpoint()
