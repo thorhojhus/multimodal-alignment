@@ -63,6 +63,7 @@ class AudioLLMModel(nn.Module):
         # make llm embeddings and lm head for audio tokens trainable
         for i in self.audio_token_ids:
             self.lm.get_input_embeddings().weight[i].requires_grad = True
+            # output embeddings are tied to input embeddings
             #self.lm.get_output_embeddings().weight[i].requires_grad = True
         
 
