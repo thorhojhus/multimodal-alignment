@@ -82,11 +82,35 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     )
     
     print_parameter_count(model, logger)
+
+    trainable_params = []
+
+    if cfg.model.expand_embeds:
+        # When using expand_embeds, we train only the embeddings for audio tokens
+        logger.info("Using expand_embeds mode - training only the new audio token embeddings")
+        
+        trainable_params.append({"params": list(model.lm.get_input_embeddings().parameters())})
     
-    trainable_params = [
-        {"params": list(model.projector.parameters())},
-    ]
-    
+    if cfg.model.train_llm:
+        print(model.lm)
+        lora_params = []
+        for name, param in model.lm.named_parameters():
+            if ('lora' in name) and param.requires_grad:
+                lora_params.append(param)
+        
+        # Append as a dictionary with "params" key to match other branches
+        trainable_params.append({"params": lora_params})
+        logger.info(f"Training LoRA parameters: {len(lora_params)} parameters")
+            
+            
+    if hasattr(model, 'projector') and model.projector is not None:
+        # Standard mode - training the projector
+        trainable_params.append({"params": list(model.projector.parameters())})
+        logger.info("Training projector parameters")
+
+    if not trainable_params:
+        raise ValueError("No trainable parameters found. Check model configuration.")
+
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     
     dataloader = DataLoader(
@@ -297,21 +321,17 @@ def main(cfg: DictConfig):
     model = AudioLLMModel(cfg)
 
     lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=256,
+        lora_alpha=32,
         target_modules="all-linear",
         lora_dropout=0.1,
         bias="none",
-        use_dora=True,
+        use_dora=False,
         use_rslora=True,
     )
 
     if cfg.model.train_llm:
         model.lm = inject_adapter_in_model(lora_config, model.lm)
-    else:
-        # freeze non-trainable components
-        for param in model.lm.parameters():
-            param.requires_grad = False    
 
     if cfg.model.train_encoder:
         model.audio_encoder.audio_encoder = inject_adapter_in_model(lora_config, model.audio_encoder.audio_encoder)
