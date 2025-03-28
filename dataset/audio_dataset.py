@@ -63,6 +63,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
         self.tokenizer = tokenizer
+
         self.T = T # TinyAlign Tokenizer Cutoff/Pad to value.
         self._setup_chat_template()
         # initialize the appropriate processor based on model type
@@ -131,7 +132,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             try:
                 target_sampling_rate = self.processor.feature_extractor.sampling_rate
-            except:
+            except Exception:
                 target_sampling_rate = 16000
 
         # resample if necessary
