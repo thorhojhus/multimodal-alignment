@@ -142,7 +142,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                     except Exception:
                         return True  # Keep samples with unexpected structure
                 
-                self.dataset = self.dataset.filter(length_filter)
+                self.dataset = self.dataset.filter(length_filter, num_proc=8)
                 print(f"Loaded dataset {dataset} with {len(self.dataset)} samples (filtered from {original_size} by audio length: {self.min_audio_length}s-{self.max_audio_length}s)")
             except Exception as e:
                 print(f"Warning: Could not filter dataset by audio length: {e}")

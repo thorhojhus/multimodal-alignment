@@ -101,6 +101,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         # Append as a dictionary with "params" key to match other branches
         trainable_params.append({"params": lora_params})
         logger.info(f"Training LoRA parameters: {len(lora_params)} parameters")
+
+    if cfg.model.train_encoder_wav2vec:
+        for param in model.audio_encoder.audio_encoder.encoder.parameters():
+            param.requires_grad = True
+
+        trainable_params.append({"params": list(model.audio_encoder.audio_encoder.encoder.parameters())})
+        logger.info("Training encoder parameters")
             
             
     if hasattr(model, 'projector') and model.projector is not None:
