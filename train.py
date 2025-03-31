@@ -22,8 +22,15 @@ from utils import (
     run_evaluation_with_loss
 )
 
+import warnings
+import logging
+
+# Also use the warnings filter as backup
+warnings.filterwarnings("ignore", message="words count mismatch")
+
 # set up a module-level logger
 logger = logging.getLogger(__name__)
+logging.getLogger('phonemizer').setLevel(logging.ERROR)
 
 def setup_wandb(runtime_config: DictConfig) -> None:
 
@@ -108,7 +115,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
         trainable_params.append({"params": list(model.audio_encoder.audio_encoder.encoder.parameters())})
         logger.info("Training encoder parameters")
-            
             
     if hasattr(model, 'projector') and model.projector is not None:
         # Standard mode - training the projector

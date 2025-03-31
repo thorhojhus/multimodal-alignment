@@ -5,7 +5,7 @@ from transformers import AutoProcessor, AutoTokenizer, AutoFeatureExtractor
 from transformers import BatchFeature
 from datasets import Audio
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE, GEMMA_3
-
+from phonemizer import phonemize
 
 class AudioChatDataset(torch.utils.data.Dataset):
     def __init__(self, 
@@ -62,42 +62,42 @@ class AudioChatDataset(torch.utils.data.Dataset):
             # concat datasets
             self.dataset = concatenate_datasets(simplified_datasets)
             original_size = len(self.dataset)
-            
-            # Filter by audio length across all datasets
-            try:
-                # Filter function to keep only samples with appropriate audio lengths
-                def length_filter(sample):
-                    try:
-                        audio = sample.get("audio", None)
-                        if audio is None:
-                            return True
+            if self.config.dataset.do_filter:
+                # Filter by audio length across all datasets
+                try:
+                    # Filter function to keep only samples with appropriate audio lengths
+                    def length_filter(sample):
+                        try:
+                            audio = sample.get("audio", None)
+                            if audio is None:
+                                return True
+                                
+                            # Handle dictionary format (most common)
+                            if isinstance(audio, dict):
+                                if "array" in audio and "sampling_rate" in audio:
+                                    audio_array = audio["array"]
+                                    sampling_rate = audio["sampling_rate"]
+                                    audio_length = len(audio_array) / sampling_rate
+                                    return self.min_audio_length <= audio_length <= self.max_audio_length
                             
-                        # Handle dictionary format (most common)
-                        if isinstance(audio, dict):
-                            if "array" in audio and "sampling_rate" in audio:
-                                audio_array = audio["array"]
-                                sampling_rate = audio["sampling_rate"]
-                                audio_length = len(audio_array) / sampling_rate
+                            # Handle numpy array or tensor format
+                            elif hasattr(audio, "shape") or hasattr(audio, "size"):
+                                # Assume 16kHz sampling rate if not specified
+                                sampling_rate = 16000
+                                if hasattr(audio, "shape"):
+                                    audio_length = audio.shape[0] / sampling_rate
+                                else:
+                                    audio_length = audio.size(0) / sampling_rate
                                 return self.min_audio_length <= audio_length <= self.max_audio_length
-                        
-                        # Handle numpy array or tensor format
-                        elif hasattr(audio, "shape") or hasattr(audio, "size"):
-                            # Assume 16kHz sampling rate if not specified
-                            sampling_rate = 16000
-                            if hasattr(audio, "shape"):
-                                audio_length = audio.shape[0] / sampling_rate
-                            else:
-                                audio_length = audio.size(0) / sampling_rate
-                            return self.min_audio_length <= audio_length <= self.max_audio_length
-                            
-                        return True  # Keep samples with unknown format
-                    except Exception:
-                        return True  # Keep samples with unexpected structure
-                
-                self.dataset = self.dataset.filter(length_filter, num_proc=8)
-                print(f"Combined dataset with {len(self.dataset)} samples (filtered from {original_size} by audio length: {self.min_audio_length}s-{self.max_audio_length}s)")
-            except Exception as e:
-                print(f"Warning: Could not filter by audio length: {e}")
+                                
+                            return True  # Keep samples with unknown format
+                        except Exception:
+                            return True  # Keep samples with unexpected structure
+                    
+                    self.dataset = self.dataset.filter(length_filter, num_proc=8)
+                    print(f"Combined dataset with {len(self.dataset)} samples (filtered from {original_size} by audio length: {self.min_audio_length}s-{self.max_audio_length}s)")
+                except Exception as e:
+                    print(f"Warning: Could not filter by audio length: {e}")
             
             # Shuffle the final dataset
             indices = list(range(len(self.dataset)))
@@ -109,43 +109,44 @@ class AudioChatDataset(torch.utils.data.Dataset):
             self.dataset = self._load_single_dataset(dataset, split)
             if self.dataset is None:
                 raise ValueError(f"Failed to load dataset: {dataset}")
-                
-            # Filter by audio length (if the dataset contains audio and sampling_rate fields)
-            original_size = len(self.dataset)
-            try:
-                # Filter function to keep only samples with appropriate audio lengths
-                def length_filter(sample):
-                    try:
-                        audio = sample.get("audio", None)
-                        if audio is None:
-                            return True
+            
+            if self.config.dataset.do_filter:
+                # Filter by audio length (if the dataset contains audio and sampling_rate fields)
+                original_size = len(self.dataset)
+                try:
+                    # Filter function to keep only samples with appropriate audio lengths
+                    def length_filter(sample):
+                        try:
+                            audio = sample.get("audio", None)
+                            if audio is None:
+                                return True
+                                
+                            # Handle dictionary format (most common)
+                            if isinstance(audio, dict):
+                                if "array" in audio and "sampling_rate" in audio:
+                                    audio_array = audio["array"]
+                                    sampling_rate = audio["sampling_rate"]
+                                    audio_length = len(audio_array) / sampling_rate
+                                    return self.min_audio_length <= audio_length <= self.max_audio_length
                             
-                        # Handle dictionary format (most common)
-                        if isinstance(audio, dict):
-                            if "array" in audio and "sampling_rate" in audio:
-                                audio_array = audio["array"]
-                                sampling_rate = audio["sampling_rate"]
-                                audio_length = len(audio_array) / sampling_rate
+                            # Handle numpy array or tensor format
+                            elif hasattr(audio, "shape") or hasattr(audio, "size"):
+                                # Assume 16kHz sampling rate if not specified
+                                sampling_rate = 16000
+                                if hasattr(audio, "shape"):
+                                    audio_length = audio.shape[0] / sampling_rate
+                                else:
+                                    audio_length = audio.size(0) / sampling_rate
                                 return self.min_audio_length <= audio_length <= self.max_audio_length
-                        
-                        # Handle numpy array or tensor format
-                        elif hasattr(audio, "shape") or hasattr(audio, "size"):
-                            # Assume 16kHz sampling rate if not specified
-                            sampling_rate = 16000
-                            if hasattr(audio, "shape"):
-                                audio_length = audio.shape[0] / sampling_rate
-                            else:
-                                audio_length = audio.size(0) / sampling_rate
-                            return self.min_audio_length <= audio_length <= self.max_audio_length
-                            
-                        return True  # Keep samples with unknown format
-                    except Exception:
-                        return True  # Keep samples with unexpected structure
-                
-                self.dataset = self.dataset.filter(length_filter, num_proc=8)
-                print(f"Loaded dataset {dataset} with {len(self.dataset)} samples (filtered from {original_size} by audio length: {self.min_audio_length}s-{self.max_audio_length}s)")
-            except Exception as e:
-                print(f"Warning: Could not filter dataset by audio length: {e}")
+                                
+                            return True  # Keep samples with unknown format
+                        except Exception:
+                            return True  # Keep samples with unexpected structure
+                    
+                    self.dataset = self.dataset.filter(length_filter, num_proc=8)
+                    print(f"Loaded dataset {dataset} with {len(self.dataset)} samples (filtered from {original_size} by audio length: {self.min_audio_length}s-{self.max_audio_length}s)")
+                except Exception as e:
+                    print(f"Warning: Could not filter dataset by audio length: {e}")
             
         if tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(lm_model)
@@ -277,21 +278,44 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 audio_array = audio_array.numpy()
             audio_array = audio_array.squeeze()
             return  self.processor(audio_array, sampling_rate=16000, return_tensors="pt", padding=True, output_hidden_states=True)
-        
+    
+    def _phonemize(self, text, language='en-us'):
+
+        ipa_text = phonemize(
+            text,
+            language='en-us',
+            backend='espeak',
+            words_mismatch="ignore",
+            strip=True,
+            preserve_punctuation=True,
+            with_stress=False,
+            logger=None,)
+
+        return ipa_text
+
 
 
     def _format_chat(self, example, audio):
+        
+        prompt = "Transcribe the following text in lower case:"
+
+        if self.config.training.do_phonemize:
+            example = self._phonemize(example)
+            prompt = "Transcribe the following text in IPA:"
+
+
         if self.lm_model_name != "gemma":
             return [
                 {"role": "system", "content": "You transcribe speech to text. You need to repeat the text once exactly as it is spoken."},
-                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
+                {"role": "user", "content": f"{prompt} {audio}"},
                 {"role": "assistant", "content": example}
             ]
         else:
             return [
-                {"role": "user", "content": f"Transcribe the following text in lower case: {audio}"},
+                {"role": "user", "content": f"{prompt} {audio}"},
                 {"role": "assistant", "content": example}
             ]
+        
         
     def __getitem__(self, idx):
         example = self.dataset[idx]
