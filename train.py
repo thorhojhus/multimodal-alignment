@@ -29,7 +29,9 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 
     wandb.init(
         entity="borkeren",
-        project="multimodal-alignment",
+        project="multimodal-alignment"
+                if not runtime_config.wandb.get('project', None)
+                else runtime_config.wandb.project,
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
              if runtime_config.wandb.run_name == "default"
              else runtime_config.wandb.run_name,
