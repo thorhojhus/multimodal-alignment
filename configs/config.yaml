@@ -1,7 +1,9 @@
 hydra:
   job:
     chdir: true
-
+  run:
+    dir: /work3/s224233/shared/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    
 wandb:
   enabled: false
   run_name: "default"
