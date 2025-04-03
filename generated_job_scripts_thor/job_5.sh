@@ -29,4 +29,4 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 model.projector=cnn model.downsample_factor=8 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks model.load_in_4_bit=true wandb.run_name="5 - Gemma 2 9B + Hviske V2 + CNN \(Coral\)"
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=syvai/hviske-v2 model.projector=cnn model.downsample_factor=8 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks model.load_in_4bit=true wandb.run_name="5 - Gemma 2 9B + Hviske V2 + CNN \(Coral\)"
