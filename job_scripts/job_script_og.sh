@@ -7,7 +7,7 @@
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 04:00
+#BSUB -W 01:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
@@ -29,5 +29,4 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-2-2b-it model.encoder_model_name=BiCodec training.batch_size=8 wandb.enabled=true model.load_in_4bit=true model.train_llm=true wandb.run_name=bicodec-gemma-2b-avgpool-downsample-test
-#python train.py
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=facebook/wav2vec2-base-960h dataset.name=coral training.batch_size=16 wandb.enabled=true model.load_in_4bit=true model.audio_tokenizer=true model.audio_tokenizer_vocab_size=8192

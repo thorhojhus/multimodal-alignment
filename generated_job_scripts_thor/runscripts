@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Loop through all .sh files in the current directory
+for script in *.sh; do
+    if [ -f "$script" ]; then
+        # Submit the script to the job scheduler
+        echo "Submitting $script ..."
+        bsub < $script
+    fi
+done
