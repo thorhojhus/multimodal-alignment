@@ -112,7 +112,7 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
                         config_dict[key.strip()] = value.strip()
             
             # Add RUNNAME
-            config_dict['run_name'] = f"\"{id} - {row[6]}\""
+            config_dict['wandb.run_name'] = f"\"{id} - {row[6]}\""
             config_dict['id'] = id
             result.append(config_dict)
     
