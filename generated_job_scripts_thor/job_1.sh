@@ -29,4 +29,4 @@ module swap cuda/12.6.3
 
 cd ~/multimodal-alignment
 source .venv/bin/activate
-python train.py model.lm_model_name=Gemma-2-9B model.encoder_model_name=openai/whisper-large-v3 model.audio_tokenizer=true model.audio_tokenizer_vocab_size=8192 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks model.load_in_4_bit=true wandb.run_name="1 - Gemma 2 9B + Whisper Large + Audio Codec \(Coral\)"
+python train.py model.lm_model_name=google/gemma-2-9b-it model.encoder_model_name=openai/whisper-large-v3 model.audio_tokenizer=true model.audio_tokenizer_vocab_size=8192 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks model.load_in_4_bit=true wandb.run_name="1 - Gemma 2 9B + Whisper Large + Audio Codec \(Coral\)"

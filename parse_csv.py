@@ -48,6 +48,11 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
     """
     import csv
     
+    gemma_map: dict = {
+        "Gemma 2 9B": "google/gemma-2-9b-it",
+        "Gemma 2 2B": "google/gemma-2-2b-it"
+    }
+
     # Define the projection map
     projection_map: dict[str, str] = {
         "Linear": "linear",
@@ -76,7 +81,7 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
             config_dict = {}
             
             # Parse LLM MODEL
-            config_dict['model.lm_model_name'] = row[0].replace(" ", "-")
+            config_dict['model.lm_model_name'] = gemma_map.get(row[0].strip())
             
             # Parse ENCODER MODEL using the encoder map
             encoder_value = row[1].strip()
