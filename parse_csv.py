@@ -59,7 +59,7 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
         "Ultravox Style": "simple",
         "Audio Codec": None,
         "TinyAlign": "tinyalign",
-        "CNN": "cnn"
+        "CNN": "conv"
     }
 
     encoder_map: dict[str, str] = {
