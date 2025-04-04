@@ -235,9 +235,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
             
         if ("Wav2Vec2" in self.processor.__class__.__name__):
             # for wav2vec, return raw waveform
-            
-            if len(audio_array) / audio_sampling_rate > 17: # truncate audio to 17 seconds
-                audio_array = audio_array[:audio_sampling_rate*17]
+            if (len(audio_array) / audio_sampling_rate) > 16: # truncate audio to 16 seconds
+                audio_array = audio_array[:audio_sampling_rate*16]
             return audio_array
         elif "MimiFeatureExtractor" in self.processor.__class__.__name__ or "Mimi" in self.processor.__class__.__name__:
             # Process with Mimi feature extractor following the HuggingFace example
@@ -247,6 +246,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
                 return_tensors="pt"
             )
         elif ("SeamlessM4TFeatureExtractor" in self.processor.__class__.__name__):
+            if (len(audio_array) / audio_sampling_rate) > 16: # truncate audio to 16 seconds
+                audio_array = audio_array[:audio_sampling_rate*16]
             return self.processor(
                 audio_array,
                 sampling_rate=target_sampling_rate,
