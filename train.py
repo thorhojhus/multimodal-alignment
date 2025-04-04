@@ -88,7 +88,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         config=cfg,
     )
     
-    print_parameter_count(model, logger)
+    
 
     trainable_params = []
 
@@ -115,6 +115,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
         trainable_params.append({"params": list(model.audio_encoder.audio_encoder.encoder.parameters())})
         logger.info("Training encoder parameters")
+
+    if cfg.model.train_encoder_full:
+        for param in model.audio_encoder.audio_encoder.parameters():
+            param.requires_grad = True
+
+        trainable_params.append({"params": list(model.audio_encoder.audio_encoder.parameters())})
+        logger.info("Training full encoder parameters")
             
     if hasattr(model, 'projector') and model.projector is not None:
         # Standard mode - training the projector
@@ -126,6 +133,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     
+    print_parameter_count(model, logger)
+
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
@@ -348,7 +357,7 @@ def main(cfg: DictConfig):
 
     if cfg.model.train_encoder:
         model.audio_encoder.audio_encoder = inject_adapter_in_model(lora_config, model.audio_encoder.audio_encoder)
-
+    
     if cfg.wandb.enabled:
         setup_wandb(cfg)
 

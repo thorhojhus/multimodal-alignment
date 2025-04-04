@@ -137,6 +137,10 @@ class AudioLLMModel(nn.Module):
             return CNNProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
         elif type == "linear":
             return LinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "transformer":
+            from models.transformer_adapter import SpeechAdapter
+            return SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim).to("cuda", torch.bfloat16)
+        
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:

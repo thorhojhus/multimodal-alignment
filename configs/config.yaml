@@ -1,6 +1,8 @@
 hydra:
   job:
     chdir: true
+  run:
+    dir: /work3/s224233/shared/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 wandb:
   enabled: false
@@ -12,7 +14,7 @@ model:
   lm_model_name: "google/gemma-2-2b-it"
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
-  projector: "simple" # can be simple (ultravox style), tinyalign, linear (one layer), conv
+  projector: "simple" # can be simple (ultravox style), tinyalign, linear (one layer), conv, transformer
   token_length: 30
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
@@ -20,6 +22,7 @@ model:
   train_encoder: false
   expand_embeds: false # must use BiCodec as encoder_model_name if true
   train_encoder_wav2vec: false # if we want to train the transformer layers of the wav2vec model
+  train_encoder_full: false
 
 training:
   num_epochs: 3
@@ -34,6 +37,7 @@ training:
   log_every_n_steps: 10
   loss: "ce" # can be kl_loss, embed_loss or ce
   kl_temp: 2.0
+  do_phonemize: false
 
 eval:
   n_samples: 128
@@ -44,5 +48,6 @@ dataset:
   name: "librispeech"
   split: "train"
   test_split: "test"
+  do_filter: false
   min_audio_length: 1.0  # minimum audio length in seconds
   max_audio_length: 20.0  # maximum audio length in seconds
