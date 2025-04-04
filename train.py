@@ -110,6 +110,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         logger.info(f"Training LoRA parameters: {len(lora_params)} parameters")
 
     if cfg.model.train_encoder_wav2vec:
+        model.audio_encoder.audio_encoder.gradient_checkpointing_enable()
         for param in model.audio_encoder.audio_encoder.encoder.parameters():
             param.requires_grad = True
 
@@ -117,6 +118,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         logger.info("Training encoder parameters")
 
     if cfg.model.train_encoder_full:
+        model.audio_encoder.audio_encoder.gradient_checkpointing_enable()
         for param in model.audio_encoder.audio_encoder.parameters():
             param.requires_grad = True
 
@@ -145,8 +147,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         pin_memory=True
     )
     
-    # calculate total number of training steps
-    total_steps = len(dataloader) * cfg.training.num_epochs
+    # Calculate effective total number of training steps with gradient accumulation
+    total_steps = len(dataloader) * cfg.training.num_epochs // cfg.training.get('gradient_accumulation_steps', 1)
     
     # create the scheduler using warmup_steps from config
     scheduler = get_linear_schedule_with_warmup(
@@ -170,6 +172,9 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         total_loss = 0
         epoch_start_time = time.monotonic()
         batch_start_time = time.monotonic()
+        
+        # Zero gradients at the beginning of each epoch
+        optimizer.zero_grad()
         
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
@@ -215,37 +220,57 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
             # backward pass
             loss = outputs.loss
+            # scale the loss by the number of gradient accumulation steps
+            loss = loss / cfg.training.get('gradient_accumulation_steps', 1)
             loss.backward()
             
-            # optimizer and scheduler steps
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+            # only update weights after accumulating gradients for the specified number of steps
+            if (batch_idx + 1) % cfg.training.get('gradient_accumulation_steps', 1) == 0:
+                # clip gradients to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(
+                    [p for group in trainable_params for p in group["params"]], 
+                    max_norm=cfg.training.get('gradient_clip_norm', 1.0)
+                )
+                
+                # optimizer and scheduler steps
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                
+                # Each gradient accumulation cycle counts as one step for logging and evaluation
+                global_step += 1
             
-            total_loss += loss.item()
-            global_step += 1
+            total_loss += loss.item() * cfg.training.get('gradient_accumulation_steps', 1)
             
             # calculate batch time
             batch_time = time.monotonic() - batch_start_time
             
-            if global_step % cfg.training.log_every_n_steps == 0:
+            # for logging, determine if this is a gradient update step
+            is_update_step = (batch_idx + 1) % cfg.training.get('gradient_accumulation_steps', 1) == 0
+            
+            # Only log on designated log steps and after parameter updates
+            if global_step > 0 and global_step % cfg.training.log_every_n_steps == 0 and is_update_step:
                 current_lr = scheduler.get_last_lr()[0]
                 memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
                 memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
                 #torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
-                    f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
+                    f"Loss: {loss.item() * cfg.training.get('gradient_accumulation_steps', 1):.4f} | "
+                    f"LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
                 if cfg.wandb.enabled:
                     wandb.log({
-                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                        "train/loss": loss.item() * cfg.training.get('gradient_accumulation_steps', 1), 
+                        "lr": current_lr, 
+                        "train/batch_time": batch_time
                     })
             
 
             # run evaluation and loss calculation if needed
-            if global_step % cfg.training.evaluate_every_n_steps == 0:
+            # Only run evaluation after parameter updates and on evaluation steps
+            if global_step > 0 and global_step % cfg.training.evaluate_every_n_steps == 0 and is_update_step:
                 logger.info("\nRunning evaluation at step %d", global_step)
                 
                 # calculate evaluation loss

@@ -159,17 +159,17 @@ class AudioLLMModel(nn.Module):
 
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
-        with torch.no_grad():
-            if "mimi" in self.config.model.encoder_model_name:
-                audio_encoded = self.audio_encoder(audio_features).audio_codes
+        if "mimi" in self.config.model.encoder_model_name:
+            audio_encoded = self.audio_encoder(audio_features).audio_codes
 
-            elif "BiCodec" in self.config.model.encoder_model_name:
-                audio_encoded = self.audio_encoder(audio_features)
-            
-            else:
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+        elif "BiCodec" in self.config.model.encoder_model_name:
+            audio_encoded = self.audio_encoder(audio_features)
+        
+        else:
+            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
-            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+        audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+
 
         return self.projector(audio_encoded)
     

@@ -31,8 +31,8 @@ def count_trainable_parameters(model: torch.nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def print_parameter_count(model: torch.nn.Module, logger: logging.Logger) -> None:
-    trainable_params = count_trainable_parameters(model)
-    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = count_trainable_parameters(model) + count_trainable_parameters(model.audio_encoder.audio_encoder)
+    total_params = sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in model.audio_encoder.audio_encoder.parameters())
     logger.info("Model Parameters:")
     logger.info(f"Trainable parameters: \t{trainable_params:,}")
     logger.info(f"Total parameters: \t{total_params:,}")
