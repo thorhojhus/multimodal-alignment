@@ -194,12 +194,18 @@ def generate_batch(
 
     return generated_texts, ground_truths
 
-def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[float, float, list[float], list[float]]:
+def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[float, float, list[float], list[float], list[float]]:
     wer = jiwer.wer(references, hypotheses)
     cer = jiwer.cer(references, hypotheses)
-    wer_individual_list = [jiwer.wer([ref], [hyp]) for ref, hyp in zip(references, hypotheses)]
-    cer_individual_list = [jiwer.cer([ref], [hyp]) for ref, hyp in zip(references, hypotheses)]
-    return wer, cer, wer_individual_list, cer_individual_list
+    wer_individual_list, cer_individual_list = [], []
+    wer_corrected_list = []
+    for ref, hyp in zip(references, hypotheses):
+        wer_individual_list.append(jiwer.wer([ref], [hyp]))
+        cer_individual_list.append(jiwer.cer([ref], [hyp]))
+        corrected_ref, *_ = ref.split("\n", maxsplit=1)
+        wer_corrected_list.append(jiwer.wer([corrected_ref], [hyp]))
+
+    return wer, cer, wer_individual_list, cer_individual_list, wer_corrected_list
 
 def run_evaluation(
     model: torch.nn.Module,
@@ -269,7 +275,7 @@ def run_evaluation(
         samples_processed += len(generated_texts)
 
     logger.info("Calculating metrics...")
-    wer, cer, wer_list, cer_list = calculate_metrics(all_generated, all_ground_truths) 
+    wer, cer, wer_list, cer_list, corrected_wer_list = calculate_metrics(all_generated, all_ground_truths) 
 
     logger.info(f"Results over {len(all_generated)} samples:")
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
@@ -281,9 +287,9 @@ def run_evaluation(
                 for gen, gt, audiowav in zip(all_generated, all_ground_truths, all_audio):
                     eval_table.add_data(gen, gt, wandb.Audio(save_to_temp_mp3(audiowav, 16000), sample_rate=16000, caption="Speech"))
             else:
-                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "WER", "CER"])
-                for gen, gt, w_i, c_i in zip(all_generated, all_ground_truths, wer_list, cer_list):
-                    eval_table.add_data(gen, gt, w_i, c_i)
+                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "WER", "WER (corrected)", "CER"])
+                for gen, gt, w_i, w_c_i, c_i in zip(all_generated, all_ground_truths, wer_list, corrected_wer_list, cer_list):
+                    eval_table.add_data(gen, gt, w_i, w_c_i, c_i)
             wandb.run.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()
