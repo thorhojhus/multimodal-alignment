@@ -27,27 +27,29 @@ dataset_dict = coral_dataset_dict
 def process_example(example, full_dir):
     """
     Processes a single example:
-      - Converts the audio to MP3 at 16kHz.
+      - Converts the audio to MP3 at 16kHz only if the file doesn't already exist.
       - Saves the file in full_dir.
       - Returns a tuple (filename, text).
     """
     audio_filename = f"{example['id_recording']}.mp3"
     audio_path = os.path.join(full_dir, audio_filename)
 
-    # Get audio data and sample rate
-    audio_array = example['audio']['array']
-    sample_rate = example['audio']['sampling_rate']
+    # Check if the file already exists - only process if it doesn't
+    if not os.path.exists(audio_path):
+        # Get audio data and sample rate
+        audio_array = example['audio']['array']
+        sample_rate = example['audio']['sampling_rate']
 
-    # Convert to MP3 at 16kHz
-    with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_wav:
-        # Save as temporary WAV file
-        sf.write(temp_wav.name, audio_array, sample_rate)
+        # Convert to MP3 at 16kHz
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_wav:
+            # Save as temporary WAV file
+            sf.write(temp_wav.name, audio_array, sample_rate)
 
-        # Load and adjust audio if needed
-        audio = AudioSegment.from_wav(temp_wav.name)
-        if sample_rate != 16000:
-            audio = audio.set_frame_rate(16000)
-        audio.export(audio_path, format="mp3")
+            # Load and adjust audio if needed
+            audio = AudioSegment.from_wav(temp_wav.name)
+            if sample_rate != 16000:
+                audio = audio.set_frame_rate(16000)
+            audio.export(audio_path, format="mp3")
     
     return (audio_filename, example['text'], example["location"], example["gender"], example["age"], example["dialect"], example["country_birth"])
 
@@ -62,7 +64,7 @@ for split in splits:
     csv_path = os.path.join(full_dir, "data.csv")
     examples = dataset_dict[split]
 
-    with ProcessPoolExecutor(max_workers=12) as executor:
+    with ProcessPoolExecutor(max_workers=2) as executor:
         process_func = partial(process_example, full_dir=full_dir)
         results = list(tqdm(executor.map(process_func, examples), total=len(examples)))
 

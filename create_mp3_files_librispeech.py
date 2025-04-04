@@ -17,7 +17,7 @@ os.makedirs(base_dir, exist_ok=True)
 splits = [
     #"train.clean.100",
     #"train.clean.360",
-    "train.other.500",
+    #"train.other.500",
     "test.clean",
     "test.other",
     "validation.clean",
