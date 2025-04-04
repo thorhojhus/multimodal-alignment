@@ -2,11 +2,11 @@ torch
 torchaudio
 bitsandbytes
 accelerate
-git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3
+transformers
 evaluate
 jiwer
 trl
-liger-kernel
+liger-kernel-nightly
 packaging
 ninja
 nvidia-ml-py
@@ -20,3 +20,4 @@ jupyter
 sentencepiece
 torchinfo
 peft
+phonemizer
