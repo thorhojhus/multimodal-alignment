@@ -59,7 +59,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     else:
         try:
             processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
-        except:
+        except Exception:
             from transformers import AutoFeatureExtractor
             processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
     
