@@ -119,11 +119,15 @@ class SpeechAdapter(nn.Module):
         # Rotary Transformer layer
         self.transformer = RotaryTransformerLayer(
             hidden_size=hidden_dim,
-            intermediate_size=ffn_dim
+            intermediate_size=ffn_dim,
+            num_heads=24
         )
         
         # Linear layer to map to LLM embedding dimension
         self.linear = nn.Linear(hidden_dim, llm_embed_dim)
+
+        self.ln_out = nn.LayerNorm(llm_embed_dim)
+
         
     def forward(self, audio_features: Tensor) -> Tensor:
         # audio_features shape: [batch_size, seq_len, input_dim]
@@ -136,8 +140,10 @@ class SpeechAdapter(nn.Module):
         # Apply transformer layer
         hidden_states = self.transformer(hidden_states)
         
-        # Apply final linear projection
+        # Apply final linear projection and layer norm
         hidden_states = self.linear(hidden_states)
+        hidden_states = self.ln_out(hidden_states)
+
         
         return hidden_states
 

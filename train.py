@@ -204,7 +204,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             text_ids = batch["text_ids"].to("cuda", non_blocking=True)
-            
             # forward pass
             outputs = model(
                 input_ids=input_ids,
@@ -217,7 +216,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 insertion_indices=insertion_indices,
                 text_ids=text_ids
             )
-
             # backward pass
             loss = outputs.loss
             # scale the loss by the number of gradient accumulation steps
