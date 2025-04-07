@@ -202,8 +202,8 @@ def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[flo
     for ref, hyp in zip(references, hypotheses):
         wer_individual_list.append(jiwer.wer([ref], [hyp]))
         cer_individual_list.append(jiwer.cer([ref], [hyp]))
-        corrected_ref, *_ = ref.split("\n", maxsplit=1)
-        wer_corrected_list.append(jiwer.wer([corrected_ref], [hyp]))
+        corrected_hyp, *_ = hyp.split("\n", maxsplit=1)
+        wer_corrected_list.append(jiwer.wer([ref], [corrected_hyp]))
 
     return wer, cer, wer_individual_list, cer_individual_list, wer_corrected_list
 
@@ -293,7 +293,7 @@ def run_evaluation(
             wandb.run.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()
-    return wer, cer
+    return wer, cer, corrected_wer_list
 
 
 def calculate_eval_loss(
@@ -436,7 +436,7 @@ def run_evaluation_with_loss(
         batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
-    wer, cer = run_evaluation(
+    wer, cer, corrected_wer_list = run_evaluation(
         model=model,
         test_dataset=test_dataset,
         tokenizer=tokenizer,
@@ -446,4 +446,4 @@ def run_evaluation_with_loss(
         batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
-    return eval_loss, wer, cer
+    return eval_loss, wer, cer, corrected_wer_list

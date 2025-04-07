@@ -2,6 +2,7 @@ def template(name: str, config: str, output_file_id: str) -> str:
     return f"""#!/bin/sh
 ### GPU
 #BSUB -q gpua100
+#BSUB -R "select[gpu80gb]"
 ### Name
 #BSUB -J mm_train
 ### Num cores
