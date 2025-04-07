@@ -2,6 +2,7 @@ def template(name: str, config: str, output_file_id: str) -> str:
     return f"""#!/bin/sh
 ### GPU
 #BSUB -q gpua100
+#BSUB -R "select[gpu80gb]"
 ### Name
 #BSUB -J mm_train
 ### Num cores
@@ -28,7 +29,7 @@ nvidia-smi
 module swap python3/3.12.7
 module swap cuda/12.6.3
 
-cd ~/multimodal-alignment
+cd /work3/s224233/shared/rundir
 source .venv/bin/activate
 python train.py {config}"""
 
@@ -50,7 +51,9 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
     
     gemma_map: dict = {
         "Gemma 2 9B": "google/gemma-2-9b-it",
-        "Gemma 2 2B": "google/gemma-2-2b-it"
+        "Gemma 2 2B": "google/gemma-2-2b-it",
+        "Gemma 3 4B": "google/gemma-3-4b-it",
+        "Gemma 3 12B": "google/gemma-3-12b-it",
     }
 
     # Define the projection map

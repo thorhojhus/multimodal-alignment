@@ -183,7 +183,7 @@ def train_multiple(cfg: DictConfig) -> None:
                 )
                 
                 # run WER/CER evaluation
-                wer, cer = run_evaluation(
+                wer, cer, corrected_wer_list = run_evaluation(
                     model=model,
                     test_dataset=test_dataset,
                     tokenizer=model.tokenizer,
@@ -196,12 +196,13 @@ def train_multiple(cfg: DictConfig) -> None:
                 logger.info(
                     f"Step {global_step} Evaluation | "
                     f"Eval Loss: {eval_loss:.4f} | "
-                    f"WER: {wer:.2f} | CER: {cer:.2f}"
+                    f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f}"
                 )
                 if cfg.wandb.enabled:
                     wandb.log({
                         "eval/loss": eval_loss,
                         "eval/wer": wer,
+                        "eval/wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
                         "eval/cer": cer
                     })
 
@@ -215,7 +216,7 @@ def train_multiple(cfg: DictConfig) -> None:
         
         # end of epoch evaluation
         logger.info("\nRunning end of epoch evaluation")
-        eval_loss, wer, cer = run_evaluation_with_loss(
+        eval_loss, wer, cer, wer_corrected_list = run_evaluation_with_loss(
             model=model, 
             test_dataset=test_dataset, 
             tokenizer=model.tokenizer, 
@@ -228,7 +229,7 @@ def train_multiple(cfg: DictConfig) -> None:
             f"Epoch {epoch+1} Summary | "
             f"Average Train Loss: {avg_loss:.4f} | "
             f"Eval Loss: {eval_loss:.4f} | "
-            f"WER: {wer:.2f} | CER: {cer:.2f} | "
+            f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
             f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
@@ -237,6 +238,7 @@ def train_multiple(cfg: DictConfig) -> None:
                 "train/epoch_loss": avg_loss,
                 "eval/epoch_loss": eval_loss,
                 "eval/epoch_wer": wer,
+                "eval/epoch_wer_corrected": sum(wer_corrected_list) / len(wer_corrected_list),
                 "eval/epoch_cer": cer
             })
     if cfg.wandb.enabled:
