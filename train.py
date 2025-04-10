@@ -11,7 +11,7 @@ from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
 from peft import inject_adapter_in_model, LoraConfig
-from dataset.audio_dataset import AudioChatDataset, collate_fn
+from dataset.audio_dataset import AudioChatDataset, collate_fn, add_gaussian_noise
 from models.audio_llm import AudioLLMModel
 from utils import (
     load_checkpoint,
@@ -72,7 +72,10 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         T=cfg.model.token_length,
         config=cfg,
     )
-    
+
+    if cfg.dataset.augment == "gaussian":
+        dataset.dataset.set_transform(add_gaussian_noise)
+
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,

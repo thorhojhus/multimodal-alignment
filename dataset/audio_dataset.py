@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torchaudio
 from torch import Tensor
@@ -131,7 +132,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             try:
                 target_sampling_rate = self.processor.feature_extractor.sampling_rate
-            except:
+            except Exception:
                 target_sampling_rate = 16000
 
         # resample if necessary
@@ -458,6 +459,19 @@ def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
         "text_ids": text_ids,
         "raw_audio": [item["raw_audio"] for item in batch] if include_raw_audio else None
     } 
+
+def add_gaussian_noise(
+    item: dict,
+    low: float=0.001,
+    high:float=0.03
+) -> dict:
+    """Apply a uniformly sampled noise to the raw audio waveform amplitudes.
+    
+    Sample same length as audio --> multiply with audio amplitudes --> add to audio and return"""
+    audio: np.ndarray = item["audio"][0]["array"]
+    noise = np.random.uniform(low, high, audio.shape)
+    item["audio"][0]["array"] += noise * audio
+    return item
 
 if __name__ == "__main__":
     import transformers
