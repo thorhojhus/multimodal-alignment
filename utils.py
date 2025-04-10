@@ -69,8 +69,8 @@ def save_checkpoint(
 
 def load_checkpoint(
     models: list[torch.nn.Module],
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    optimizer: torch.optim.Optimizer | None,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None,
     checkpoint_path: str,
     logger: logging.Logger,
     load_lr_from_checkpoint: bool = True
@@ -79,9 +79,10 @@ def load_checkpoint(
     checkpoint = torch.load(checkpoint_path)
     for model in models:
         model.load_state_dict(checkpoint[model._get_name()])
-    optimizer.load_state_dict(checkpoint['optimizer_state'])
+    if optimizer:
+        optimizer.load_state_dict(checkpoint['optimizer_state'])
     
-    if load_lr_from_checkpoint:
+    if scheduler and load_lr_from_checkpoint:
         logger.info("Loading learning rate schedule from checkpoint")
         scheduler.load_state_dict(checkpoint['scheduler_state'])
     else:
