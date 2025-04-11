@@ -65,7 +65,7 @@ class AudioLLMModel(nn.Module):
             self.lm.get_input_embeddings().weight[i].requires_grad = True
             # output embeddings are tied to input embeddings
             #self.lm.get_output_embeddings().weight[i].requires_grad = True
-        
+    
 
     def _create_bicodec_tokenizer(self):
         from models.bicodec_tokenizer import BiCodecTokenizer
@@ -134,7 +134,14 @@ class AudioLLMModel(nn.Module):
             from transformers.models.wav2vec2_bert import Wav2Vec2BertConfig
             adapter_config = Wav2Vec2BertConfig(add_adapter=True, output_hidden_size=embed_dim)
             return Wav2Vec2BertAdapter(adapter_config).to("cuda", torch.bfloat16)
-        
+        elif type == "simple-linear":
+            hidden_dim = 2048
+            return nn.Sequential(
+                nn.Linear(encoder_dim * self.config.model.downsample_factor, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, embed_dim),
+            ).to("cuda", torch.bfloat16)
+
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
@@ -158,13 +165,14 @@ class AudioLLMModel(nn.Module):
 
         elif "BiCodec" in self.config.model.encoder_model_name:
             audio_encoded = self.audio_encoder(audio_features)
-        
         else:
             audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
         audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
 
-
+        if self.config.model.projector == "simple-linear":
+            audio_encoded = audio_encoded.unfold(1, self.config.model.downsample_factor, self.config.model.downsample_factor).flatten(2)
+        
         return self.projector(audio_encoded)
     
     def _combine_embeddings(
