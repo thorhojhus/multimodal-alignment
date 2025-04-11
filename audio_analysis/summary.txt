@@ -1,0 +1,26 @@
+# Audio Length Analysis Summary
+
+| Dataset | Split | Count | Min (s) | Max (s) | Mean (s) | Median (s) | P95 (s) | P99 (s) | Max (samples) | P95 (samples) |
+|---------|-------|-------|---------|---------|----------|------------|---------|---------|--------------|---------------|
+| coral | train | 228960 | 1.14 | 10.00 | 5.67 | 5.46 | 8.94 | 9.72 | 480000 | 429120 |
+| coral | test | 8000 | 1.38 | 9.96 | 5.77 | 5.58 | 9.18 | 9.78 | 478080 | 440784 |
+| coral | validation | 1991 | 1.38 | 9.96 | 5.54 | 5.28 | 9.06 | 9.78 | 478080 | 434880 |
+| librispeech | train.clean.100 | 28539 | 1.41 | 24.52 | 12.69 | 13.99 | 16.09 | 16.70 | 392400 | 257360 |
+| librispeech | train.clean.360 | 104014 | 1.06 | 29.73 | 12.58 | 13.93 | 16.07 | 16.67 | 475760 | 257200 |
+| librispeech | train.other.500 | 148688 | 0.83 | 27.92 | 12.03 | 13.63 | 16.06 | 16.68 | 446720 | 256960 |
+| librispeech | test.clean | 2620 | 1.28 | 34.95 | 7.42 | 5.79 | 17.84 | 25.48 | 559280 | 285472 |
+| librispeech | test.other | 2939 | 1.25 | 34.51 | 6.54 | 5.15 | 15.76 | 21.42 | 552160 | 252176 |
+| librispeech | validation.clean | 2703 | 1.45 | 32.65 | 7.18 | 5.92 | 16.41 | 23.76 | 522320 | 262616 |
+| librispeech | validation.other | 2864 | 1.06 | 35.16 | 6.44 | 5.25 | 15.03 | 22.18 | 562480 | 240468 |
+| melatech | train | 13637 | 0.11 | 59.40 | 21.37 | 20.94 | 34.08 | 45.53 | 2619539 | 1502927 |
+| melatech | test | 1516 | 3.80 | 58.38 | 20.98 | 20.64 | 33.12 | 43.12 | 2574558 | 1460591 |
+
+
+## Maximum Values Across All Datasets
+
+- Max seconds: 59.40
+- 95th percentile seconds: 34.08
+- 99th percentile seconds: 45.53
+- Max samples: 2619539
+- 95th percentile samples: 1502927
+- 99th percentile samples: 2008059

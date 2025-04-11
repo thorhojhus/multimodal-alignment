@@ -6,7 +6,7 @@ transformers
 evaluate
 jiwer
 trl
-liger-kernel
+liger-kernel-nightly
 packaging
 ninja
 nvidia-ml-py
@@ -20,5 +20,6 @@ jupyter
 sentencepiece
 torchinfo
 peft
+phonemizer
 seaborn
 librosa

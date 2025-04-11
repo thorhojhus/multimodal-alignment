@@ -23,17 +23,21 @@ class AudioLLMModel(nn.Module):
         self.config = config
         # create model components
         self.lm = self._create_lm()
+        # setup special tokens
+        self.tokenizer = self._setup_tokenizer()
+
         self.audio_encoder = EncoderWrapper(config.model.encoder_model_name)
         if self.config.model.audio_tokenizer:
             self.projector = self._create_audio_tokenizer()
         elif self.config.model.encoder_model_name == "kyutai/mimi":
             self.projector = self._create_mimi_tokenizer()
-        elif self.config.model.encoder_model_name == "BiCodec":
+        elif self.config.model.encoder_model_name == "BiCodec" and not self.config.model.expand_embeds:
             self.projector = self._create_bicodec_tokenizer()
+        elif self.config.model.encoder_model_name == "BiCodec" and self.config.model.expand_embeds:
+            self.projector = self._create_bicodec_llm_tokens()
         else:
             self.projector = self._create_projector(config.model.projector)
-        self.tokenizer = self._setup_tokenizer()
-        # setup special tokens
+
         self.audio_token_str = "<|audio|>"
         self._add_special_token()
         self.audio_token_id = self.tokenizer.convert_tokens_to_ids(self.audio_token_str)
@@ -45,6 +49,23 @@ class AudioLLMModel(nn.Module):
         self.beta = 1.0
         self.MSELoss = nn.MSELoss()
         self.CosSim = nn.CosineSimilarity(dim=-1)
+    
+    def _create_bicodec_llm_tokens(self):
+        unique_audio_tokens = 8192
+        # create <|audio_0|>, <|audio_1|>, ..., <|audio_8191|>
+        self.audio_tokens = [f"<|audio_{i}|>" for i in range(unique_audio_tokens)]
+        # add audio tokens to tokenizer
+        self.tokenizer.add_tokens(self.audio_tokens)
+        # get audio token ids
+        self.audio_token_ids = [self.tokenizer.convert_tokens_to_ids(token) for token in self.audio_tokens]
+        # expand llm
+        self.lm.resize_token_embeddings(len(self.tokenizer))
+        # make llm embeddings and lm head for audio tokens trainable
+        for i in self.audio_token_ids:
+            self.lm.get_input_embeddings().weight[i].requires_grad = True
+            # output embeddings are tied to input embeddings
+            #self.lm.get_output_embeddings().weight[i].requires_grad = True
+    
 
     def _create_bicodec_tokenizer(self):
         from models.bicodec_tokenizer import BiCodecTokenizer
@@ -80,25 +101,14 @@ class AudioLLMModel(nn.Module):
             bnb_4bit_compute_dtype=torch.bfloat16
         ) if self.config.model.load_in_4bit else None
 
-        if "gemma-3" in self.config.model.lm_model_name:
-            from transformers import Gemma3ForCausalLM
-            # no liger support for gemma-3 yet, can also not get anything but google/gemma-3-1b-it to work
-            lm = Gemma3ForCausalLM.from_pretrained(
-                self.config.model.lm_model_name,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
-                device_map="cuda",
-                quantization_config=quantization_config
-            )
-        else:
-            # initialize language model with flash attention and liger kernels for memory efficiency
-            lm = AutoLigerKernelForCausalLM.from_pretrained(
-                self.config.model.lm_model_name,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
-                device_map="cuda",
-                quantization_config=quantization_config
-            )
+        # initialize language model with flash attention and liger kernels for memory efficiency
+        lm = AutoLigerKernelForCausalLM.from_pretrained(
+            self.config.model.lm_model_name,
+            attn_implementation="eager",
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            quantization_config=quantization_config
+        )
 
         # freeze lm parameters
         for param in lm.parameters():
@@ -116,6 +126,22 @@ class AudioLLMModel(nn.Module):
             return CNNProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
         elif type == "linear":
             return LinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "transformer":
+            from models.transformer_adapter import SpeechAdapter
+            return SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim).to("cuda", torch.bfloat16)
+        elif type == "wav2vecbert":
+            from transformers.models.wav2vec2_bert.modeling_wav2vec2_bert import Wav2Vec2BertAdapter
+            from transformers.models.wav2vec2_bert import Wav2Vec2BertConfig
+            adapter_config = Wav2Vec2BertConfig(add_adapter=True, output_hidden_size=embed_dim)
+            return Wav2Vec2BertAdapter(adapter_config).to("cuda", torch.bfloat16)
+        elif type == "simple-linear":
+            hidden_dim = 2048
+            return nn.Sequential(
+                nn.Linear(encoder_dim * self.config.model.downsample_factor, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, embed_dim),
+            ).to("cuda", torch.bfloat16)
+
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
     def _setup_tokenizer(self) -> transformers.PreTrainedTokenizer:
@@ -134,18 +160,19 @@ class AudioLLMModel(nn.Module):
 
     def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
         # encode and project audio features
-        with torch.no_grad():
-            if "mimi" in self.config.model.encoder_model_name:
-                audio_encoded = self.audio_encoder(audio_features).audio_codes
+        if "mimi" in self.config.model.encoder_model_name:
+            audio_encoded = self.audio_encoder(audio_features).audio_codes
 
-            elif "BiCodec" in self.config.model.encoder_model_name:
-                audio_encoded = self.audio_encoder(audio_features)
-            
-            else:
-                audio_encoded = self.audio_encoder(audio_features).last_hidden_state
+        elif "BiCodec" in self.config.model.encoder_model_name:
+            audio_encoded = self.audio_encoder(audio_features)
+        else:
+            audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
-            audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+        audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
 
+        if self.config.model.projector == "simple-linear":
+            audio_encoded = audio_encoded.unfold(1, self.config.model.downsample_factor, self.config.model.downsample_factor).flatten(2)
+        
         return self.projector(audio_encoded)
     
     def _combine_embeddings(
@@ -222,6 +249,23 @@ class AudioLLMModel(nn.Module):
         audio_wavs: Optional[Tensor] = None, **kwargs
     ) -> Any:
         
+        if self.config.model.encoder_model_name == "BiCodec" and self.config.model.expand_embeds:
+            # get BiCodec tokens from the encoder
+            with torch.inference_mode():
+                audio_tokens = self.audio_encoder(audio_features)
+            # convert to llm audio token strings
+            audio_token_list = []
+            for batch_idx, _ in enumerate(audio_tokens):
+                audio_token_list.append([self.audio_tokens[token] for token in audio_tokens[batch_idx]])
+            audio_ids = []
+            for token_list in audio_token_list:
+                audio_ids.append(self.tokenizer.convert_tokens_to_ids(token_list))
+            
+            # get audio embeddings
+            audio_ids_tensor = torch.tensor(audio_ids).to("cuda", torch.int64)
+            audio_embeds = self.lm.get_input_embeddings()(audio_ids_tensor)
+            audio_embeds.requires_grad_(True)
+
         # If embed_loss (TinyAlign) is used:
         if self.config.training.loss=="embed_loss":
             text_embeddings = self.lm.get_input_embeddings()(trunced_text_ids)
@@ -233,9 +277,9 @@ class AudioLLMModel(nn.Module):
             output_wavs = self.generate_tts(self.tokenizer.batch_decode(text_ids, skip_special_tokens=True))
             return self._audio_reconstruction_loss(audio_wavs, output_wavs, "L1")
 
-
-        # process audio and text features
-        audio_embeds = self._process_audio_features(audio_features)
+        if not self.config.model.expand_embeds:
+            # process audio and text features
+            audio_embeds = self._process_audio_features(audio_features)
         
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
