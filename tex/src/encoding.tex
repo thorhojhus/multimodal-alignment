@@ -31,13 +31,17 @@ Positional encodings allow the model to learn the absolute and relative position
 
 While the sinusoidal positional encoding is extremely enticing due to its simplicity and properties, another encoding was introduced by Su et al called RoPE (Rotary Position Embeddings)\cite{su_roformer_2023}.
 
-RoPe formulates another approach, where they realize that in the self attention calculation, the dot product between query and key vector, $q_m^Tk_n$, and if that computation should not only enable knowledge conveyance (ANDET ORD?) but also relative positional encoding, then a equaivalent function has to be found such that:
+Simple positional encoding also did not generalize really well.
+
+RoPE is another type of positional encoding, which is instead of based on addition with the embeddings prior to attention mechanics, it is implemented directly in the attention mechanism itself. 
+
+RoPe formulates another approach, where they realize that in the self attention calculation, the dot product between query and key vector, $q_m^Tk_n$, could perhaps not only enable knowledge importance but also relative positional encoding, then a equaivalent function has to be found such that:
 
 \begin{equation}
     <f_q(x_m, m), f_k(x_n, n)> = g(x_m, x_n, m-n)
 \end{equation}
 
-Where $ m - n $ is the relative positions of input. The proposed solution is a little indepth, but the intuition is to intorduce a rotational matrix for the query and key vectors. A illustrative example is shown in figure \ref{fig:rope} from the paper.
+Where $ m - n $ is the relative positions of input. The proposed solution is a little indepth, but the intuition is to introduce a rotational matrix for the query and key vectors. A illustrative example is shown in figure \ref{fig:rope} from the paper.
 
 \begin{figure}
     \centering
@@ -53,3 +57,45 @@ Where $ m - n $ is the relative positions of input. The proposed solution is a l
     \label{fig:penc}
 \end{figure}
 
+\subsection{Byte Pair Encoding (BPE)}
+
+Machine Learning models working in a natural language domain require that text is parsed in a way that makes it readable for the machines. For more modern machine learning models, the pre-processing on text is usually done on huge corpi of texts. A crucial first step it is figuring out the tokenization of the input texts. Text tokenization is the discretization of words, subwords and special characters into natural numbers - including spaces and newlines. For example, the Gemma 2 9B LLM model would tokenize text "The red brown fox jumps over the lazy dog" would be tokenized into a set of discrete tokens: 
+
+\begin{center}
+    \begin{tabular}{c c c c c c c c c}
+        The & \_quick & \_brown & \_fox & \_jumps & \_over & \_the & \_lazy & \_dog \\
+        651 & 4320 & 8426 & 25341 & 36271 & 1163 & 573 & 27894 & 5929 \\
+    \end{tabular}
+\end{center}
+This matches the length of our sentence, so each word (with prefixed spaces) have become their own tokens.\footnote{The tokenizer actually also produces a special token '2', which is a token specifying the "beginning of sentence".}  The tokenizer has also integrated the space (tokenized as '\_') between the words, and attached; this means that words like "hello" and " hello" - with a space - is represented as different tokens! However, what happens when a tokenizer is exposed to less common words such as some Danish words like "Rød grød med fløde" - the following sentence would be tokenized a bit differently:
+
+\begin{center}
+    \begin{tabular}{c c c c c c c}
+        R & ød & \_gr & ød & \_med & \_fl & øde \\
+        235294 & 35173 & 2660 & 35173 & 2407 & 6067 & 100529 \\
+    \end{tabular}
+\end{center}
+
+Here the words a split up  into subwords; 'grød' becomes '2434'(\_gr) and '35173'(ød) for example.
+
+The reason for the difference lies in the algorithm used for building up the vocabulary, the \textbf{Byte Pair Encoding} which briefly will be summarised below.\cite{sennrich-etal-2016-neural}
+
+\subsubsection{The algorithm}
+
+The algorithm was initially introduced by Philip Gage in the C users manual back in 1994, the purpose of the it being "compressing" text data using a ruleset of merges to frequently occuring symbols. 
+
+Large Language Models all have an employed vocabulary size - larger models employ larger vocabularies. At a base level all characters receive their own unique tokens all seen in the training data.
+
+Next the algorithm will go over the corpus and find the most common pairs of characters of length 2, and merge these into new tokens. A common example would be "th" or "he" for English, or "hv" in Danish. This will continue, next with length of 3, 4, ... and so on until the vocabulary size is reached. The algorithm is greedy, and will always merge the most common pair of tokens into a new token first based on the occurance rate.
+
+The Byte Pair Encoding Algorithm is recursive and will also merge the new tokens into a paired token if they occur frequently as well. Say if "gr" and "ød" was both tokenied, a new token would be created for when the tokens "gr" and "ød" are seen together.
+
+A consequence of this algorithm is of course that common words and phrases will be merged into their own tokens, leaving uncommon or rare words to be split up - potentially even down to a character level. If the corpus also don't have a lot of capitalized words compared to non-capitalized, it can also fail to split up words such as "Rød" and "rød".
+
+This is more common for languages with low representation such as Danish.
+
+\subsubsection{SentencePiece}
+
+Modern LLMs do not use the original BPE algorithm as described above on its own. As shown in the examples in the beginning, tokenization also included the space character. BPE would depending on the implementatin include this, but languages are different around the world - Chinese for examples do not seperate their words with spaces.
+
+SentencePiece is a tokenization algorithm that is language agnostic.\cite{kudo_sentencepiece_2018} It will treat the input as a raw input sequence, allowing it to be used for many languages.
