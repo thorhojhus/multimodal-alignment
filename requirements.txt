@@ -21,3 +21,4 @@ sentencepiece
 torchinfo
 peft
 seaborn
+librosa
