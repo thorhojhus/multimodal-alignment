@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
+from config import AppConfig
 import hydra
 import torch
 import wandb
@@ -23,8 +23,6 @@ from utils import (
 )
 
 import warnings
-import logging
-
 # Also use the warnings filter as backup
 warnings.filterwarnings("ignore", message="words count mismatch")
 
@@ -381,6 +379,9 @@ def main(cfg: DictConfig):
     logger.info("Hydra Config:\n" + str(cfg))
     # initialize components using config values from Hydra
 
+    cfg_new = AppConfig(**cfg)
+    breakpoint()
+    
     model = AudioLLMModel(cfg)
 
     lora_config = LoraConfig(
