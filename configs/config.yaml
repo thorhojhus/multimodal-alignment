@@ -42,6 +42,7 @@ eval:
 
 
 dataset:
+  augment: "none"
   name: "librispeech"
   split: "train.clean.360"
   test_split: "test.clean"

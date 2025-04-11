@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torchaudio
 from torch import Tensor
@@ -5,6 +6,8 @@ from transformers import AutoProcessor, AutoTokenizer, AutoFeatureExtractor
 from transformers import BatchFeature
 from datasets import Audio
 from dataset.chat_templates import CHATML_TEMPLATE, GEMMA_2, LLAMA3_TEMPLATE, GEMMA_3
+from scipy.signal import butter, sosfiltfilt
+import librosa
 
 
 class AudioChatDataset(torch.utils.data.Dataset):
@@ -131,7 +134,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         else:
             try:
                 target_sampling_rate = self.processor.feature_extractor.sampling_rate
-            except:
+            except Exception:
                 target_sampling_rate = 16000
 
         # resample if necessary
@@ -214,7 +217,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
         text = example["text"].lower()
         # Handle potential missing fields in simplified datasets
         if isinstance(audio, dict) and "array" in audio and "sampling_rate" in audio:
-            audio_array = torch.tensor(audio["array"], dtype=torch.float32)
+            audio_array = torch.tensor(audio["array"].copy(), dtype=torch.float32) # copy to circumvent stride issues (torch can't handle negative strides for some reason)
             audio_sampling_rate = audio["sampling_rate"]
         else:
             # For compatibility with datasets that might have a different structure
@@ -458,6 +461,98 @@ def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
         "text_ids": text_ids,
         "raw_audio": [item["raw_audio"] for item in batch] if include_raw_audio else None
     } 
+
+def add_gaussian_noise(
+    item: dict,
+    p: float=0.2,
+    low: float=0.001,
+    high:float=0.03
+) -> dict:
+    """Apply a uniformly sampled noise to the raw audio waveform amplitudes.
+    
+    Sample same length as audio --> multiply with audio amplitudes --> add to audio and return
+    """
+
+    # Return original waveform if augmentation is skipped
+    if np.random.random() > p:
+        return item
+
+    audio: np.ndarray = item["audio"][0]["array"]
+    noise = np.random.uniform(low, high, audio.shape)
+    item["audio"][0]["array"] += noise * audio
+    return item
+
+
+def apply_band_stop_augmentation(
+    item: dict,
+    p: float=0.2,
+    min_freq: int=0,
+    max_freq: int=4000,
+    min_width: int=100
+) -> dict:
+    """
+    Apply a band stop filter as a data augmentation technique for ASR.
+    Inspired by: WHISPER TURNS STRONGER: AUGMENTING WAV2VEC 2.0 
+                 FOR SUPERIOR ASR IN LOW-RESOURCE LANGUAGES
+
+    min_freq/max_freq: limits the frequencies to apply the bandwith filter to.
+    min_width: minimum width of the stop band.
+    p: probability of applying the augmentation.
+    fs: sampling rate of the audio.
+    """
+    #  Return original waveform if augmentation is skipped
+    if np.random.random() > p:
+        return item
+
+    waveform = item["audio"][0]["array"]
+    sr = item["audio"][0]["sampling_rate"]
+
+    # Define the frequency range for the stop band
+    max_start_freq = max_freq - min_width  # Ensure room for the band width
+    f_low = np.random.uniform(min_freq, max_start_freq)  # Random start of stop band
+    f_high = np.random.uniform(f_low + min_width, min(f_low + 200, max_freq))  # Random end, capped at max_freq
+
+    # Design a Butterworth band stop filter (order 4 for moderate roll-off)
+    sos = butter(4, [f_low, f_high], btype='bandstop', output='sos', fs=sr)
+
+    # Apply zero-phase filtering
+    augmented_waveform = sosfiltfilt(sos, waveform)
+    item["audio"][0]["array"] = augmented_waveform
+
+    return item
+
+
+def apply_pitch_shift_augmentation(
+    item: dict,
+    p: float=0.2,
+    min_shift: int=-6,
+    max_shift: int=6
+) -> dict:
+    """
+    Apply pitch shift augmentation to an audio waveform using librosa.
+    Inspired by: WHISPER TURNS STRONGER: AUGMENTING WAV2VEC 2.0 
+                 FOR SUPERIOR ASR IN LOW-RESOURCE LANGUAGES
+    
+    p: probability of applying the augmentation.
+    min_shift: minimum pitch shift in semitones.
+    max_shift: maximum pitch shift in semitones.
+    """
+    # Return original waveform if augmentation is skipped
+    if np.random.random() > p:
+        return item
+
+    waveform = item["audio"][0]["array"]
+    sr = item["audio"][0]["sampling_rate"]
+
+    # Randomly choose pitch shift in semitones between min_shift and max_shift
+    n_steps = np.random.uniform(min_shift, max_shift)
+
+    # Apply pitch shift using librosa
+    augmented_waveform = librosa.effects.pitch_shift(waveform, sr=sr, n_steps=n_steps)
+    item["audio"][0]["array"] = augmented_waveform
+
+    return item
+
 
 if __name__ == "__main__":
     import transformers
