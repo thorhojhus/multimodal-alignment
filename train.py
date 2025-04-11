@@ -75,12 +75,16 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
 
     match cfg.dataset.augment:
         case "gaussian":
+            logger.info("Adding amplitude noise augmentation")
             dataset.dataset.set_transform(add_gaussian_noise)
         case "bandstop":
+            logger.info("Applying band stop augmentation")
             dataset.dataset.set_transform(apply_band_stop_augmentation)
         case "pitchshift":
+            logger.info("Adding pitch shift augmentation")
             dataset.dataset.set_transform(apply_pitch_shift_augmentation)
         case _:
+            logger.info("Applying no data augmentations")
             pass
 
     test_dataset = AudioChatDataset(
