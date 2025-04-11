@@ -30,12 +30,12 @@ warnings.filterwarnings("ignore", message="words count mismatch")
 logger = logging.getLogger(__name__)
 logging.getLogger('phonemizer').setLevel(logging.ERROR)
 
-def setup_wandb(runtime_config: DictConfig) -> None:
+def setup_wandb(runtime_config: AppConfig) -> None:
 
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment"
-                if not runtime_config.wandb.get('project', None)
+                if not runtime_config.wandb.project
                 else runtime_config.wandb.project,
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
              if runtime_config.wandb.run_name == "default"
@@ -43,7 +43,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, cfg: DictConfig) -> None:
+def train(model: torch.nn.Module, cfg: AppConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -101,8 +101,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         T=cfg.model.token_length,
         config=cfg,
     )
-    
-    
 
     trainable_params = []
 
@@ -162,7 +160,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     )
     
     # Calculate effective total number of training steps with gradient accumulation
-    total_steps = len(dataloader) * cfg.training.num_epochs // cfg.training.get('gradient_accumulation_steps', 1)
+    total_steps = len(dataloader) * cfg.training.num_epochs // cfg.training.gradient_accumulation_steps
     
     # create the scheduler using warmup_steps from config
     scheduler = get_linear_schedule_with_warmup(
@@ -233,15 +231,15 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             # backward pass
             loss = outputs.loss
             # scale the loss by the number of gradient accumulation steps
-            loss = loss / cfg.training.get('gradient_accumulation_steps', 1)
+            loss = loss / cfg.training.gradient_accumulation_steps
             loss.backward()
             
             # only update weights after accumulating gradients for the specified number of steps
-            if (batch_idx + 1) % cfg.training.get('gradient_accumulation_steps', 1) == 0:
+            if (batch_idx + 1) % cfg.training.gradient_accumulation_steps == 0:
                 # clip gradients to prevent exploding gradients
                 torch.nn.utils.clip_grad_norm_(
                     [p for group in trainable_params for p in group["params"]], 
-                    max_norm=cfg.training.get('gradient_clip_norm', 1.0)
+                    max_norm=cfg.training.gradient_clip_norm
                 )
                 
                 # optimizer and scheduler steps
@@ -252,13 +250,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 # Each gradient accumulation cycle counts as one step for logging and evaluation
                 global_step += 1
             
-            total_loss += loss.item() * cfg.training.get('gradient_accumulation_steps', 1)
+            total_loss += loss.item() * cfg.training.gradient_accumulation_steps
             
             # calculate batch time
             batch_time = time.monotonic() - batch_start_time
             
             # for logging, determine if this is a gradient update step
-            is_update_step = (batch_idx + 1) % cfg.training.get('gradient_accumulation_steps', 1) == 0
+            is_update_step = (batch_idx + 1) % cfg.training.gradient_accumulation_steps == 0
             
             # Only log on designated log steps and after parameter updates
             if global_step > 0 and global_step % cfg.training.log_every_n_steps == 0 and is_update_step:
@@ -268,7 +266,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 #torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
-                    f"Loss: {loss.item() * cfg.training.get('gradient_accumulation_steps', 1):.4f} | "
+                    f"Loss: {loss.item() * cfg.training.gradient_accumulation_steps:.4f} | "
                     f"LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
@@ -368,7 +366,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             })
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
-def main(cfg: DictConfig):
+def main(hydra_conf: DictConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -376,11 +374,10 @@ def main(cfg: DictConfig):
     torch.backends.cudnn.enabled = True
     torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
     # log the Hydra configuration for reproducibility
-    logger.info("Hydra Config:\n" + str(cfg))
+    logger.info("Hydra Config:\n" + str(hydra_conf))
     # initialize components using config values from Hydra
 
-    cfg_new = AppConfig(**cfg)
-    breakpoint()
+    cfg = AppConfig(**hydra_conf)
     
     model = AudioLLMModel(cfg)
 
