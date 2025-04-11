@@ -272,7 +272,7 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
                 )
                 if cfg.wandb.enabled:
                     wandb.log({
-                        "train/loss": loss.item() * cfg.training.get('gradient_accumulation_steps', 1), 
+                        "train/loss": loss.item() * cfg.training.gradient_accumulation_steps, 
                         "lr": current_lr, 
                         "train/batch_time": batch_time
                     })
