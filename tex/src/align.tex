@@ -2,6 +2,8 @@
 
 In the paper TinyAlign, Qin et al introduces a transformer based architecture that bridges the audio encoding representation with those of the equivalent text embeddings in the LLM. The framework is a combination of three parts: a projection layers, \textbf{BridgeFormer}, a loss model function, \textbf{EmbedLink} and last instruction tuning.
 
+Qin et al proposes another way to look at the alignment problem; instead of utilizing 
+
 \subsubsection*{BridgeFormer}
 
 \textbf{BridgeFormer} is the name given to the projection and alignment layer between the audio feature extractor and the LLM. It is a combination of multi-layer perceptron layers, transformer encoders and convolutions. In this framework, the bridgeformer is the only model trained, and the audio feature extractor and LLM is \textit{frozen}. See figure \ref{fig:bridgeformer} for the architecture. BridgeFormer mimics another simple alignment paradigme where you train the projection layer only, hoping to learn a mapping that can utilize the information from the audio feature extractor to the LLM.
@@ -14,31 +16,26 @@ The token size, or token length, is determined based on the dataset usually; for
 
 The series of computations done in BridgeFormer module can be summed up as the follow:
 
-
-First a few multilayer perceptrons using a GELU activation and LayerNormalization is employed to project from $D_a$ to a higher dimension input $H$.
-$$ E_{in} = MLP_{input}(F_audio) $$
-
-The input is then sent through a few transformer encoder layers with $M$ multi-head self-attentions to process and refine features without reshaping the dimensions.
-$$E_{enc} = ENC(E_{in})$$
-
-Afterwards, a convolutional layer is used alongsime an average pooling to reshape the sequence length down to the token length.
-$$E_{pool} = Pool(CONV(E_{enc}))$$
-
-Finally, a few more MLPs are used to project down to the LLM embedding dimension size $D_l$.
-$$E_{out} = MLP_{output}(E_{pool})$$
+\begin{itemize}
+    \item First a few multilayer perceptrons using a GELU activation and LayerNormalization is employed to project from $D_a$ to a higher dimension input $H$. $$ E_{in} = MLP_{input}(F_audio) $$\\
+    \item The input is then sent through a few transformer encoder layers with $M$ multi-head self-attentions to process and refine features without reshaping the dimensions.
+    $$E_{enc} = ENC(E_{in})$$ \\
+    \item Afterwards, a convolutional layer is used alongsime an average pooling to reshape the sequence length down to the token length.
+    $$E_{pool} = Pool(CONV(E_{enc}))$$ \\
+    \item Finally, a few more MLPs are used to project down to the LLM embedding dimension size $D_l$.
+    $$E_{out} = MLP_{output}(E_{pool})$$
+\end{itemize}
 
 The reason that T is chosen, and not something closer to the feature extraction sequence length, lies in how the BridgeFormer module is utilized and trained: \textbf{EmbedLink}.
 
 \subsubsection*{EmbedLink}
 
-The EmbedLink layer is there to ensure cross-modal alignment utilizing the large language model's embedding layer. It does so through the shared embedding space that BridgeFormer projects the audio features into. The insights the authors share is that LLMs text processing relies heavily on its embeddings. Thus if BridgeFormer can transform the audio features into their matching text embeddings from the LLM, alignment can be achieved without the large overhead of LLM inference.
-
-\cite{qin_tiny-align_2024}
+The EmbedLink layer is there to ensure cross-modal alignment utilizing the large language model's embedding layer. It does so through the shared embedding space that BridgeFormer projects the audio features into. The insights the authors share is that LLMs text processing relies heavily on its embeddings. Thus if BridgeFormer can transform the audio features into their matching text embeddings from the LLM, alignment can be achieved without the large overhead of LLM inference.\cite{qin_tiny-align_2024}
 
 \begin{figure}
     \centering
     \includegraphics[width=0.8\textwidth]{figures/bridgeformer.png}
-    \caption{The architecture of the BridgeFormer model. From their paper}
+    \caption{The architecture of the BridgeFormer model. Source: \cite{qin_tiny-align_2024}}
     \label{fig:bridgeformer}
 \end{figure}
 

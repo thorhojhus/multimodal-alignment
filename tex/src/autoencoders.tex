@@ -1,0 +1,18 @@
+\subsection{Auto Encoders}
+Working with the full data representation is not always required and can be computationally expensive. In many domains, such as in image analysis or audio processing, the data often includes a large amount of features - pixels in images, or frequencies in audio signals. In these cases, it is possible and often beneficial to try and find a lower dimensional representation of the data. Encoders and decoders are very common in order to transmit and share for exaple images, video and audio - formats such as JPEG, H.264, and MP3 good examples, reducing the size of images and audio allowing for easier transportation.
+
+Techniques such as Principal Component Analysis (PCA) can achieve the dimensionality reduction, by computing and projection the data into a lower dimensional hyperspace. However, PCA is a linear method and in some cases, the data is not linearly separable.
+
+In contrast to PCA, autoencoders are a type of model that has two components to it; an \emph{encoder} and a \emph{decoder}. In contrast to PCA, the encoder and decoder are not neccesarily linear transformations, but can be any arbitrary function. The encoders maps the input from the original dimensional space to a lower dimensional space, usually denoted the \emph{latens space}.
+
+$$
+X_{latent} \in \mathbb{R}^H  = f_{encoder}(X_{input} \in \mathbb{R}^D)
+$$
+
+Where $X_{latent}$ is the latent representation of the input data $X_{input}$, $f_{encoder}$ is the encoder function and $H$ is the latent space dimension. The decoder then maps the latent representation back to the original dimensional space as $X_{reconstructed}$.
+
+$$
+X_{reconstructed} \in \mathbb{R}^D = f_{decoder}(X_{latent} \in \mathbb{R}^H)
+$$
+
+An ideal autoencoder would be able to fully reconstruct the original data from the latent representation received from the encoder, i.e., $X_{reconstructed} = f_{decoder}(f_{encoder}(X_{input}))$. However, most autoencoders will be lossy, and will not be able to fully reconstruct the original data.

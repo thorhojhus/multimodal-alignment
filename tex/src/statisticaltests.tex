@@ -1,6 +1,6 @@
 \subsection{Statistics}
 
-In order to evaluate the performance of the alignment models we set up, we are going to perform a few statistical tests. The purpose of the tests is to verify if there is a statistically significant improvement to be found using our approach to help align our models for native languages.
+In order to evaluate the performance of the alignment models we presented so far, we are going to perform a few statistical tests. The purpose of the tests is to verify if there is a statistically significant improvement to be found using our approach to help align our models for native languages.
 
 The choice of statistical test is very important, because it has implications about how the results are interpreted and how accurate they are. Many statistical models are either \textit{parametric} or \textit{non-parametric}; i.e., they either assume that the model or data has a underlying distribution it follows, or they do not. In any case, the choice is very dependent on the kind of data one wishes to perform the test on. The choice of test can also change if you are comparing two or more groups, or if you are comparing a group to a known value. Likewise, if the data is dependent or independent can also dictate which kind of test one has to employ.\cite{STATS}
 
@@ -17,6 +17,10 @@ As is for most automatic speech recognition models, the data we wish to compare 
 \end{equation}
 
 In both equations \ref{eq:wer} and \ref{eq:cer}, $S$ is the number of substitutions, $D$ is the number of deletions, $I$ is the number of insertions, and $N$ is the total number of words or characters in the \textit{reference} text. The WER and CER are calculated by dividing the sum of the substitutions, deletions, and insertions by the total number of words or characters in the reference text. The lower the WER and CER, the better the model is at transcribing the audio. The WER and CER are by no means the perfect metrics, but they are common metrics used in the field of automatic speech recognition. They are also easy to calculate and understand, which is why we have chosen to use them in our evaluation as well.
+
+An inherent property of the this metric is that it is unbounded upwards, i.e., $$0 \leq \textrm{WER|CER} < \infty$$
+
+For example, if the produced text is \texttt{Automatic Text Recognition} and the reference text is \texttt{Automatic Speech Recognition}, then the WER would be $\frac{1}{3}$, because there is an substitution - if the produced text is instead \texttt{Automatic Recognition}, then the produced WER is still only $\frac{1}{3}$. This represents another caveeat with the metric; different kind of errors can produce the same error rates. If the lenght of the produced text is longer than the reference text, the produced error rate can be above 1.
 
 \subsubsection{Wilcoxon Signed Rank Test}
 The wilcoxon signed rank test is a non-parametric \textit{rank} test, and is used to compare the difference between two paired groups $\pmb{X}$ and $\pmb{Y}$. It is non-parametric in the sense that it does not assume what the underlying distribution is (which is usually a normal distribution) but instead assume that it is a \textit{symmetric} distribution around a central value. The distribution in question is around the difference between two samples $\pmb{Z} = \pmb{X} - \pmb{Y}$
