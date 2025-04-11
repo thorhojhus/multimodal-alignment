@@ -11,7 +11,7 @@ from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor, get_linear_schedule_with_warmup
 from peft import inject_adapter_in_model, LoraConfig
-from dataset.audio_dataset import AudioChatDataset, collate_fn
+from dataset.audio_dataset import AudioChatDataset, collate_fn, add_gaussian_noise, apply_band_stop_augmentation, apply_pitch_shift_augmentation
 from models.audio_llm import AudioLLMModel
 from utils import (
     load_checkpoint,
@@ -36,7 +36,9 @@ def setup_wandb(runtime_config: DictConfig) -> None:
 
     wandb.init(
         entity="borkeren",
-        project="multimodal-alignment",
+        project="multimodal-alignment"
+                if not runtime_config.wandb.get('project', None)
+                else runtime_config.wandb.project,
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
              if runtime_config.wandb.run_name == "default"
              else runtime_config.wandb.run_name,
@@ -64,7 +66,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     else:
         try:
             processor = AutoProcessor.from_pretrained(cfg.model.encoder_model_name)
-        except:
+        except Exception:
             from transformers import AutoFeatureExtractor
             processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
     
@@ -77,7 +79,21 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         T=cfg.model.token_length,
         config=cfg,
     )
-    
+
+    match cfg.dataset.augment:
+        case "gaussian":
+            logger.info("Adding amplitude noise augmentation")
+            dataset.dataset.set_transform(add_gaussian_noise)
+        case "bandstop":
+            logger.info("Applying band stop augmentation")
+            dataset.dataset.set_transform(apply_band_stop_augmentation)
+        case "pitchshift":
+            logger.info("Adding pitch shift augmentation")
+            dataset.dataset.set_transform(apply_pitch_shift_augmentation)
+        case _:
+            logger.info("Applying no data augmentations")
+            pass
+
     test_dataset = AudioChatDataset(
         lm_model=cfg.model.lm_model_name,
         dataset=cfg.dataset.name,
@@ -282,7 +298,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 )
                 
                 # run WER/CER evaluation
-                wer, cer = run_evaluation(
+                wer, cer, corrected_wer_list = run_evaluation(
                     model=model,
                     test_dataset=test_dataset,
                     tokenizer=model.tokenizer,
@@ -295,12 +311,13 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 logger.info(
                     f"Step {global_step} Evaluation | "
                     f"Eval Loss: {eval_loss:.4f} | "
-                    f"WER: {wer:.2f} | CER: {cer:.2f}"
+                    f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f}"
                 )
                 if cfg.wandb.enabled:
                     wandb.log({
                         "eval/loss": eval_loss,
                         "eval/wer": wer,
+                        "eval/wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
                         "eval/cer": cer
                     })
 
@@ -314,7 +331,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         
         # end of epoch evaluation
         logger.info("\nRunning end of epoch evaluation")
-        eval_loss, wer, cer = run_evaluation_with_loss(
+        eval_loss, wer, cer, corrected_wer_list = run_evaluation_with_loss(
             model=model, 
             test_dataset=test_dataset, 
             tokenizer=model.tokenizer, 
@@ -339,7 +356,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             f"Epoch {epoch+1} Summary | "
             f"Average Train Loss: {avg_loss:.4f} | "
             f"Eval Loss: {eval_loss:.4f} | "
-            f"WER: {wer:.2f} | CER: {cer:.2f} | "
+            f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
             f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
             f"Average Batch Time: {avg_batch_time:.2f}s"
         )
@@ -348,6 +365,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 "train/epoch_loss": avg_loss,
                 "eval/epoch_loss": eval_loss,
                 "eval/epoch_wer": wer,
+                "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
                 "eval/epoch_cer": cer
             })
 

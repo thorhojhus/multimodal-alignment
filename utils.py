@@ -69,8 +69,8 @@ def save_checkpoint(
 
 def load_checkpoint(
     models: list[torch.nn.Module],
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    optimizer: torch.optim.Optimizer | None,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None,
     checkpoint_path: str,
     logger: logging.Logger,
     load_lr_from_checkpoint: bool = True
@@ -79,9 +79,10 @@ def load_checkpoint(
     checkpoint = torch.load(checkpoint_path)
     for model in models:
         model.load_state_dict(checkpoint[model._get_name()])
-    optimizer.load_state_dict(checkpoint['optimizer_state'])
+    if optimizer:
+        optimizer.load_state_dict(checkpoint['optimizer_state'])
     
-    if load_lr_from_checkpoint:
+    if scheduler and load_lr_from_checkpoint:
         logger.info("Loading learning rate schedule from checkpoint")
         scheduler.load_state_dict(checkpoint['scheduler_state'])
     else:
@@ -194,10 +195,18 @@ def generate_batch(
 
     return generated_texts, ground_truths
 
-def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[float, float]:
+def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[float, float, list[float], list[float], list[float]]:
     wer = jiwer.wer(references, hypotheses)
     cer = jiwer.cer(references, hypotheses)
-    return wer, cer
+    wer_individual_list, cer_individual_list = [], []
+    wer_corrected_list = []
+    for ref, hyp in zip(references, hypotheses):
+        wer_individual_list.append(jiwer.wer([ref], [hyp]))
+        cer_individual_list.append(jiwer.cer([ref], [hyp]))
+        corrected_hyp, *_ = hyp.split("\n", maxsplit=1)
+        wer_corrected_list.append(jiwer.wer([ref], [corrected_hyp]))
+
+    return wer, cer, wer_individual_list, cer_individual_list, wer_corrected_list
 
 def run_evaluation(
     model: torch.nn.Module,
@@ -267,7 +276,7 @@ def run_evaluation(
         samples_processed += len(generated_texts)
 
     logger.info("Calculating metrics...")
-    wer, cer = calculate_metrics(all_generated, all_ground_truths) 
+    wer, cer, wer_list, cer_list, corrected_wer_list = calculate_metrics(all_generated, all_ground_truths) 
 
     logger.info(f"Results over {len(all_generated)} samples:")
     logger.info(f"Word Error Rate (WER): {wer:.4f}")
@@ -279,13 +288,13 @@ def run_evaluation(
                 for gen, gt, audiowav in zip(all_generated, all_ground_truths, all_audio):
                     eval_table.add_data(gen, gt, wandb.Audio(save_to_temp_mp3(audiowav, 16000), sample_rate=16000, caption="Speech"))
             else:
-                eval_table = wandb.Table(columns=["Generated", "Ground Truth"])
-                for gen, gt in zip(all_generated, all_ground_truths):
-                    eval_table.add_data(gen, gt)
-            wandb.log({"evaluation_completions": eval_table})
+                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "WER", "WER (corrected)", "CER"])
+                for gen, gt, w_i, w_c_i, c_i in zip(all_generated, all_ground_truths, wer_list, corrected_wer_list, cer_list):
+                    eval_table.add_data(gen, gt, w_i, w_c_i, c_i)
+            wandb.run.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()
-    return wer, cer
+    return wer, cer, corrected_wer_list
 
 
 def calculate_eval_loss(
@@ -428,7 +437,7 @@ def run_evaluation_with_loss(
         batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
-    wer, cer = run_evaluation(
+    wer, cer, corrected_wer_list = run_evaluation(
         model=model,
         test_dataset=test_dataset,
         tokenizer=tokenizer,
@@ -438,4 +447,4 @@ def run_evaluation_with_loss(
         batch_size=config.eval.batch_size or config.training.batch_size,
     )
     
-    return eval_loss, wer, cer
+    return eval_loss, wer, cer, corrected_wer_list

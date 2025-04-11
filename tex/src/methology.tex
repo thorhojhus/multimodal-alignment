@@ -1,88 +1,33 @@
-
 In this section we will summarize the most critical methods and parts of the pipeline we have used in our experiments. We will cover the data preprocessing, the models we have used and some of their internal processing, as well as the evaluation metrics we have used to evaluate the models and compare them.
 
 Starting off with processing of audio signals, we will cover the Fourier Transform and the Short-time Fourier Transform, which are the basis for the spectrogram representation of audio signals. We will then cover the models we have used in our experiments, and how they have been trained and evaluated. Finally, we will cover the evaluation metrics we have used to evaluate the models.
 
-\subsubsection{Fourier Transform}
-% Lige nu en omskrivning fra vores FITS paper.
+\subsection{Alignment Models}
 
-Audio is the primary domain, along with the textual domain, that this thesis and its research revolves around. Therefore, it is important to cover the basics of audio processing and how we have utilized it in our experiments and how the litterature has used it in similar experiments.
+\subsubsection{Baseline}
 
-The fourier transform is the primary and most common method for decomposing a signal in the time domain, where audio data primarily is found, into the many frequencies for which the function consists of. As such the Fourier Transform is a mapping from the time domain into the frequency domain. The fourier transform is a very powerful tool to disassemble the different frequencies in our data, and it is a crucial step for many modern applications for dealing with audio signals.
+\subsubsection{MLP (Ultravox Style)}
 
-The formula for a continuous Fourier transform is 
-$$
-F(\omega) = \int_{-\infty}^{\infty} f(t) \cdot e^{-i\omega t} \, dt
-$$
-Where $F(\omega)$ is the frequency-domain representation of the audio signal $f$, $f(t)$ is the time-domain signal value at time $t$, and $e^{-i\omega t}$ is the basis function for decomposing a signal into its frequency components. When you integrate the function over a specific amount of time you get a function that represents amplitude and phase of each frequency component in the signal provided.
+\subsubsection{Convolutional Neural Network (CNN)}
 
-A continuous signal is problematic for computers to effectively work with. Computers need discrete values to store as bits in memory etc. To alleviate this, a continuous signal can be sampled at various rates, usually in equidistant time intervals. The length of the sampled signal will allow for greater representations in the frequency domain. This is because the signal has more points sampled to allow for higher frequencies to act as a basis in the frequency domain. As such, a higher sampling rate will give a greater representation at the cost of memory / storage. A critical concept for determining a perfect sampling rate for a signal is the Nyquist-Shannon sampling theorem, which states that to accurately reconstruct a continous signal from the sampled version the sampling rate must be at least twice the highest frequency of the signal:
-$$
-f_s \geq 2 f_{max}
-$$
-Where $f_s$ is the sampling rate and $f_{max}$ is the highest frequency present in the signal. 
+\subsubsection{TinyAlign \& BridgeFormer}
 
-In many applications related with computer science, it is natural to sample a continuous signal to discretize it. Naturally, as the time series data provided is already in a computer-readable format, we need to perform discrete Fourier transforms (DFT). The formula for a discrete fourier transform is seen in equation {\ref{eq:fft}}.
+\subsubsection{Audio Embeddings (OVIS style)}
 
-\begin{equation}
-    X_k = \sum_{n=0}^{N-1} x_n \cdot e^{-i \frac{2\pi}{N} nk}, \quad k = 0, 1, \ldots, N-1
-    \label{eq:fft}
-\end{equation}
+\subsubsection{VAE (RQ \& RVQ)}
 
-Utilizing equation \ref{eq:fft} directly to calculate the DFT of a signal would be costly procedure. The reason is clear from the formula - For each data point, for which there are $N$ of, a sum of length $N$ is performed. As such, the time complexity of the processing is proportional to the squared length of the signal we wish to transform i.e., in big O notation it has the complexity of $O(N^2)$.
+\subsection{Data Processing}
 
-\subsubsection{Fast Fourier Transform}
+Many of the pre-trained models that we have incorporated into the project experiments were trained on data that had certain requirements. For example, most models were trained on audio data sampled at a rate of 16kHz, but some audio has higher resolution and is recorded at 48kHz.
 
-To address this inefficiency, we use the Fast Fourier Transform (FFT), which is an optimized algorithm for computing the Fourier transform. The FFT significantly reduces the computational cost by exploiting the symmetry and periodicity properties of the DFT. The FFT algorithm reduces the time complexity to $O(N \log N)$, making it much more feasible for practical applications.
+As the models were trained on 16kHz data, providing them with 48kHz data would not be optimal. It is, however, possible to downsample signals between two different rates with ease\footnote{as long as ratio is a natural number}. Assume in our case, we want to go from 48kHz to 16kHz;  $\frac{48}{16} - 1 = \frac{3}{1} - 1 = 2$ zeros between every point in the original signal. A \textit{low pass filter} is then applied on half of lowest frequency of the two (8kHz). This ensures no aliasing occurs when we downsample the signal. In the example we then sample every 3rd point in the now filtered signal.
 
-The FFT often used is the Cooley-Tukey algorithm, which operates by recursively breaking down a DFT of any composite size $N = N_1N_2$ into many smaller DFTs of sizes $N_1$ and $N_2$, simplifying the computation. This divide-and-conquer approach leverages the efficiency of smaller DFTs to compute the larger one more quickly.
+CoRal dataset is recoreded in 48kHz and we downsample it to 16kHz
 
-\subsubsection{Real-valued Fast Fourier Transform}
+\subsubsection{Data Augmentation}
 
-A simple increase in computational efficiency is possible when working with real valued data, $X \in \mathbb{R}$. In such case, only approximately half the computations are required to perform the FFT, as the output will be complex conjugates of one-another
+\textbf{Band Stop Filtering}
 
-\begin{equation*}
-    X_k = \overline{X_{N-k}}, \quad \forall k \in \left[1, \left\lfloor\frac{N}{2}\right\rfloor\right]
-\end{equation*}
+\textbf{Amplitude Noise}
 
-While the asymptotic runtime of the algorithm won't change, the constant time factor will be halved with can be noteable.
-
-\subsubsection{Short-time Fourier transform}
-
-It is also possible of course to run the fourier transform over a smaller window of the signal. The window need not be equal across it either.
-
-\begin{equation}
-    \textrm{STFT}(\tau, \omega) = \int_{-\infty}^{\infty} f(t) \cdot w(t - \tau) \cdot e^{-i\omega t} \, dt
-    \label{eq:stft}
-\end{equation}
-
-\subsection{Spectograms}
-A spectrogram is a representation of how a signal's frequencies varies over time.However, the fourier transform applied to a continuous signal of arbitrary length. Therefore, it is usually constructed by allowing a moving windows to fall over the audio signal, for which each window pass genereates the frequency domain representation of the signal. Stacking all these windows representations will allow one to construct the spectrogram of the signal. 
-
-The short time fourier transform is exactly the one used in computing the spectrogram for an audio signal. However, additional steps are required. In order to retrieve our spectrogram, we have to square the energy levels (amplitudes) of the output
-\begin{equation}
-    |STFT(\tau, \omega)|^2 = \left| \int_{-\infty}^{\infty} f(t) \cdot w(t - \tau) \cdot e^{-i\omega t} \, dt \right|^2
-\end{equation}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{figures/SpectrogramViolin.png}
-    \caption{An example of a spectrogram for a audio signal. Here it is of a violin playing a few notes. Notice how the notes have a base frequency from which its integer multiples are also highlighted. We can see where each note is changed as the violing is played. Source: \href{https://upload.wikimedia.org/wikipedia/commons/2/29/Spectrogram_of_violin.png}{wikipedia}}
-    \label{fig:spectrogram}
-\end{figure}
-
-\subsection{CLAP}
-
-Another model in recent litterature is the model known as CLAP, a Contrastive Language-Audio Pretraining model; this architecture which emerged back in November 2022\footnote{It should be noted that two major CLAP models exists (both have the exact same acronym) which were developed independently. These are from Microsoft and from LAION. To reduce confusion we will for the remainder of the thesis only refer to the CLAP model developed by LAION.}, where the audio domain was still dealing with challenges in a supervised envionment due to the lack of large scale labeled data.\cite{elizalde_clap_2022}\cite{wu_large-scale_2024}
-
-The contrastive part of the name refers to the learning objective for the model. In CLAP this refers to the Language-Audio, but can be for many groups of modalities, such as text-image in CLIP. The contrastive loss function utilized is simpliy a loss based on a sum of logged dot product between the models audio and text embeddings.
-
-\begin{equation}
-    L = \frac{1}{2N} \sum_{i=1}^{N} \left( \log \frac{\exp(E_i^a\cdot E_i^t / \tau)}{\sum_{j=1}^{N} \exp(E_J^a \cdot E_j^t / \tau)} + \log \frac{\exp(E_i^t\cdot E_i^a / \tau)}{\sum_{j=1}^{N} \exp(E_J^t \cdot E_j^a / \tau)} \right)
-    \label{eq:contrastive_loss}
-\end{equation}
-In equation \ref{eq:contrastive_loss},  $E_i^a$ and $E_i^t$ are the audio and text embeddings for the $i$'th sample, and $\tau$ is a temperature hyperparameter which is used to scale the dot product. In this project, only the audio embeddings are of interrest.
-
-Contrastive learning is a paradigm used in machine learning to help models learn representations for data which is unlabeled. By feeding pairs of data into the model, it will help learn a shared latent space for audio and text. The training datasets for this model were not related to ASR (automatic speech recognition), but rather categorization and recognition; but perhaps these representations it has learned in such settings can be utilized in the pipeline anyhow, as they were learned to match a similar text embedding.
-
-The model was trained on audio files which were mono-channelled and at a sample rate of 48kHz.\cite{wu_large-scale_2024}
+\textbf{Band Stop Filtering}

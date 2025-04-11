@@ -21,3 +21,5 @@ sentencepiece
 torchinfo
 peft
 phonemizer
+seaborn
+librosa
