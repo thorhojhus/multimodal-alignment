@@ -23,7 +23,6 @@ from utils import (
 )
 
 import warnings
-import logging
 
 # Also use the warnings filter as backup
 warnings.filterwarnings("ignore", message="words count mismatch")
@@ -56,7 +55,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create dataset and processor
     if ("w2v-bert" in cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
-        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name, padding_value=0.0)
     elif ("BiCodec" in cfg.model.encoder_model_name):
         from transformers import Wav2Vec2FeatureExtractor
         processor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
