@@ -39,16 +39,28 @@ class AudioTokenizer(nn.Module):
         self.d_model = d_model
         
         # head layers
-        self.head = nn.Sequential(
-            nn.Linear(
-                self.d_model * hidden_stride,
-                vocab_size,
-                bias=False,
-                device=self.device,
-                dtype=dtype
-            ),
-            nn.LayerNorm(vocab_size, device=self.device, dtype=dtype)
-        )
+        try:
+            self.head = nn.Sequential(
+                nn.Linear(
+                    self.d_model * hidden_stride,
+                    vocab_size,
+                    bias=False,
+                    device=self.device,
+                    dtype=dtype
+                ),
+                nn.LayerNorm(vocab_size, device=self.device, dtype=dtype)                
+            )
+        except Exception:
+            self.head = nn.Sequential(
+                nn.Linear(
+                    self.d_model * hidden_stride,
+                    vocab_size,
+                    bias=False,
+                    device=self.device,
+                    dtype=dtype
+                ),
+                nn.LayerNorm(vocab_size).to(device=self.device)          
+            )  
         
         # audio embedding
         self.audio_embedding = AudioEmbedding(
@@ -74,9 +86,9 @@ class AudioTokenizer(nn.Module):
         """
         
         if self.hidden_stride > 1:
-            n, l, d = features.shape
-            assert l % self.hidden_stride == 0, "Sequence length must be divisible by hidden_stride"
-            features = features.reshape(n, l // self.hidden_stride, self.hidden_stride * d)
+            n, w, d = features.shape
+            assert w % self.hidden_stride == 0, "Sequence length must be divisible by hidden_stride"
+            features = features.reshape(n, w // self.hidden_stride, self.hidden_stride * d)
         
         logits = self.head(features)  # [batch_size, seq_len/hidden_stride, vocab_size]
         
