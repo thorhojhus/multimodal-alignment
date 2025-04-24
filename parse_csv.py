@@ -74,6 +74,7 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
     }
     
     result = []
+    last_generated_id = 10
     
     with open(file_path, 'r', newline='') as csvfile:
         reader = csv.reader(csvfile)
@@ -120,8 +121,8 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
                         config_dict[key.strip()] = value.strip()
             
             # Add RUNNAME
-            config_dict['wandb.run_name'] = f"\"{id} - {row[6].replace("(", "\\(").replace(")", "\\)")}\""
-            config_dict['id'] = id
+            config_dict['wandb.run_name'] = f"\"{id + 1 + last_generated_id} - {row[6].replace("(", "\\(").replace(")", "\\)")}\""
+            config_dict['id'] = id + 1 + last_generated_id
             result.append(config_dict)
     
     return result

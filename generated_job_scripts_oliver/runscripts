@@ -1,10 +1,13 @@
 #!/bin/bash
+# Now only run scripts with job number > 10
 
-# Loop through all .sh files in the current directory
-for script in generated_job_scripts_oliver/*.sh; do
+for script in generated_job_scripts_oliver/job_*.sh; do
     if [ -f "$script" ]; then
-        # Submit the script to the job scheduler
-        echo "Submitting $script ..."
-        bsub < $script
+        idx=${script##*job_}
+        idx=${idx%.sh}
+        if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -gt 10 ]; then
+            echo "Submitting $script ..."
+            bsub < "$script"
+        fi
     fi
 done

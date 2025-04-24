@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
+from config import AppConfig
 import hydra
 import torch
 import wandb
@@ -22,15 +22,21 @@ from utils import (
     run_evaluation_with_loss
 )
 
+import warnings
+
+# Also use the warnings filter as backup
+warnings.filterwarnings("ignore", message="words count mismatch")
+
 # set up a module-level logger
 logger = logging.getLogger(__name__)
+logging.getLogger('phonemizer').setLevel(logging.ERROR)
 
-def setup_wandb(runtime_config: DictConfig) -> None:
+def setup_wandb(runtime_config: AppConfig) -> None:
 
     wandb.init(
         entity="borkeren",
         project="multimodal-alignment"
-                if not runtime_config.wandb.get('project', None)
+                if not runtime_config.wandb.project
                 else runtime_config.wandb.project,
         name=f"model-{runtime_config.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{runtime_config.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{runtime_config.dataset.name}-at-{datetime.now()}"
              if runtime_config.wandb.run_name == "default"
@@ -38,7 +44,7 @@ def setup_wandb(runtime_config: DictConfig) -> None:
         config=dict(runtime_config)
     )
 
-def train(model: torch.nn.Module, cfg: DictConfig) -> None:
+def train(model: torch.nn.Module, cfg: AppConfig) -> None:
     # create checkpoint directory
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -49,7 +55,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
     # create dataset and processor
     if ("w2v-bert" in cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
-        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name)
+        processor = AutoFeatureExtractor.from_pretrained(cfg.model.encoder_model_name, padding_value=0.0)
     elif ("BiCodec" in cfg.model.encoder_model_name):
         from transformers import Wav2Vec2FeatureExtractor
         processor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-large-xlsr-53")
@@ -96,15 +102,54 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         T=cfg.model.token_length,
         config=cfg,
     )
+
+    trainable_params = []
+
+    if cfg.model.expand_embeds:
+        # When using expand_embeds, we train only the embeddings for audio tokens
+        logger.info("Using expand_embeds mode - training only the new audio token embeddings")
+        
+        trainable_params.append({"params": list(model.lm.get_input_embeddings().parameters())})
     
-    print_parameter_count(model, logger)
-    
-    trainable_params = [
-        {"params": list(model.projector.parameters())},
-    ]
-    
+    if cfg.model.train_llm:
+        print(model.lm)
+        lora_params = []
+        for name, param in model.lm.named_parameters():
+            if ('lora' in name) and param.requires_grad:
+                lora_params.append(param)
+        
+        # Append as a dictionary with "params" key to match other branches
+        trainable_params.append({"params": lora_params})
+        logger.info(f"Training LoRA parameters: {len(lora_params)} parameters")
+
+    if cfg.model.train_encoder_wav2vec:
+        model.audio_encoder.audio_encoder.gradient_checkpointing_enable()
+        for param in model.audio_encoder.audio_encoder.encoder.parameters():
+            param.requires_grad = True
+
+        trainable_params.append({"params": list(model.audio_encoder.audio_encoder.encoder.parameters())})
+        logger.info("Training encoder parameters")
+
+    if cfg.model.train_encoder_full:
+        model.audio_encoder.audio_encoder.gradient_checkpointing_enable()
+        for param in model.audio_encoder.audio_encoder.parameters():
+            param.requires_grad = True
+
+        trainable_params.append({"params": list(model.audio_encoder.audio_encoder.parameters())})
+        logger.info("Training full encoder parameters")
+            
+    if hasattr(model, 'projector') and model.projector is not None:
+        # Standard mode - training the projector
+        trainable_params.append({"params": list(model.projector.parameters())})
+        logger.info("Training projector parameters")
+
+    if not trainable_params:
+        raise ValueError("No trainable parameters found. Check model configuration.")
+
     optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
     
+    print_parameter_count(model, logger)
+
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
@@ -115,8 +160,8 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         pin_memory=True
     )
     
-    # calculate total number of training steps
-    total_steps = len(dataloader) * cfg.training.num_epochs
+    # Calculate effective total number of training steps with gradient accumulation
+    total_steps = len(dataloader) * cfg.training.num_epochs // cfg.training.gradient_accumulation_steps
     
     # create the scheduler using warmup_steps from config
     scheduler = get_linear_schedule_with_warmup(
@@ -140,6 +185,9 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
         total_loss = 0
         epoch_start_time = time.monotonic()
         batch_start_time = time.monotonic()
+        
+        # Zero gradients at the beginning of each epoch
+        optimizer.zero_grad()
         
         for batch_idx, batch in enumerate(dataloader):
             # move data to GPU
@@ -169,7 +217,6 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             attention_mask = batch["attention_mask"].to("cuda", non_blocking=True)
             insertion_indices = batch["insertion_indices"]
             text_ids = batch["text_ids"].to("cuda", non_blocking=True)
-            
             # forward pass
             outputs = model(
                 input_ids=input_ids,
@@ -182,40 +229,59 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
                 insertion_indices=insertion_indices,
                 text_ids=text_ids
             )
-
             # backward pass
             loss = outputs.loss
+            # scale the loss by the number of gradient accumulation steps
+            loss = loss / cfg.training.gradient_accumulation_steps
             loss.backward()
             
-            # optimizer and scheduler steps
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+            # only update weights after accumulating gradients for the specified number of steps
+            if (batch_idx + 1) % cfg.training.gradient_accumulation_steps == 0:
+                # clip gradients to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(
+                    [p for group in trainable_params for p in group["params"]], 
+                    max_norm=cfg.training.gradient_clip_norm
+                )
+                
+                # optimizer and scheduler steps
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                
+                # Each gradient accumulation cycle counts as one step for logging and evaluation
+                global_step += 1
             
-            total_loss += loss.item()
-            global_step += 1
+            total_loss += loss.item() * cfg.training.gradient_accumulation_steps
             
             # calculate batch time
             batch_time = time.monotonic() - batch_start_time
             
-            if global_step % cfg.training.log_every_n_steps == 0:
+            # for logging, determine if this is a gradient update step
+            is_update_step = (batch_idx + 1) % cfg.training.gradient_accumulation_steps == 0
+            
+            # Only log on designated log steps and after parameter updates
+            if global_step > 0 and global_step % cfg.training.log_every_n_steps == 0 and is_update_step:
                 current_lr = scheduler.get_last_lr()[0]
                 memory_allocated = torch.cuda.memory_allocated("cuda") / 1024**2
                 memory_reserved = torch.cuda.memory_reserved("cuda") / 1024**2
                 #torch.cuda.empty_cache()
                 logger.info(
                     f"Step {global_step} | Epoch {epoch+1} | Batch {batch_idx}/{len(dataloader)} | "
-                    f"Loss: {loss.item():.4f} | LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
+                    f"Loss: {loss.item() * cfg.training.gradient_accumulation_steps:.4f} | "
+                    f"LR: {current_lr:.2e} | Batch Time: {batch_time:.2f}s | "
                     f"GPU Memory: Allocated {memory_allocated:.2f} MB, Reserved {memory_reserved:.2f} MB"
                 )
                 if cfg.wandb.enabled:
                     wandb.log({
-                        "train/loss": loss.item(), "lr": current_lr, "train/batch_time": batch_time
+                        "train/loss": loss.item() * cfg.training.gradient_accumulation_steps, 
+                        "lr": current_lr, 
+                        "train/batch_time": batch_time
                     })
             
 
             # run evaluation and loss calculation if needed
-            if global_step % cfg.training.evaluate_every_n_steps == 0:
+            # Only run evaluation after parameter updates and on evaluation steps
+            if global_step > 0 and global_step % cfg.training.evaluate_every_n_steps == 0 and is_update_step:
                 logger.info("\nRunning evaluation at step %d", global_step)
                 
                 # calculate evaluation loss
@@ -301,7 +367,7 @@ def train(model: torch.nn.Module, cfg: DictConfig) -> None:
             })
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
-def main(cfg: DictConfig):
+def main(hydra_conf: DictConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -309,31 +375,29 @@ def main(cfg: DictConfig):
     torch.backends.cudnn.enabled = True
     torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
     # log the Hydra configuration for reproducibility
-    logger.info("Hydra Config:\n" + str(cfg))
+    logger.info("Hydra Config:\n" + str(hydra_conf))
     # initialize components using config values from Hydra
 
+    cfg = AppConfig(**hydra_conf)
+    
     model = AudioLLMModel(cfg)
 
     lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=256,
+        lora_alpha=32,
         target_modules="all-linear",
         lora_dropout=0.1,
         bias="none",
-        use_dora=True,
+        use_dora=False,
         use_rslora=True,
     )
 
     if cfg.model.train_llm:
         model.lm = inject_adapter_in_model(lora_config, model.lm)
-    else:
-        # freeze non-trainable components
-        for param in model.lm.parameters():
-            param.requires_grad = False    
 
     if cfg.model.train_encoder:
         model.audio_encoder.audio_encoder = inject_adapter_in_model(lora_config, model.audio_encoder.audio_encoder)
-
+    
     if cfg.wandb.enabled:
         setup_wandb(cfg)
 

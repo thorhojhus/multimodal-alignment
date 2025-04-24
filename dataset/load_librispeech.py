@@ -14,5 +14,15 @@ librispeech_dataset_dict = DatasetDict({
     'validation.other': Dataset.from_file(f"{HOME}/datasets/librispeech/librispeech_asr-validation.other.arrow")
 })
 
+librispeech_dataset_dict['train'] = concatenate_datasets([
+    librispeech_dataset_dict['train.clean.100'],
+    librispeech_dataset_dict['train.clean.360'],
+    librispeech_dataset_dict['train.other.500']
+])
+
+librispeech_dataset_dict['test'] = concatenate_datasets([
+    librispeech_dataset_dict['test.clean']
+])
+
 if __name__ == "__main__":
     breakpoint()
