@@ -173,8 +173,13 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
     # load checkpoint if specified
     global_step = 0
     if cfg.training.resume_from_checkpoint:
+        # determine what components to load
+        load_components = [model.projector]
+        if cfg.model.train_encoder_full:
+            load_components.append(model.audio_encoder.audio_encoder)
+            
         global_step, _ = load_checkpoint(
-            [model.projector], optimizer, scheduler,
+            load_components, optimizer, scheduler,
             cfg.training.resume_checkpoint_path, logger,
             load_lr_from_checkpoint=cfg.training.load_lr_from_checkpoint
         )
@@ -343,8 +348,13 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
             best_eval_loss = eval_loss
             is_best = True
             
+        # check if we need to save encoder weights too
+        save_components = [model.projector]
+        if cfg.model.train_encoder_full:
+            save_components.append(model.audio_encoder.audio_encoder)
+            
         save_checkpoint(
-            [model.projector], optimizer, scheduler,
+            save_components, optimizer, scheduler,
             global_step, eval_loss, 
             cfg.training.checkpoint_dir, logger, is_best
         )

@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from models.encoders import EncoderWrapper
 from models.UltravoxProjector import Projector
 from models.LinearProjector import LinearProjector
+from models.SimpleLinearProjector import SimpleLinearProjector
 from models.tinyalign import BridgeFormer
 
 
@@ -135,12 +136,7 @@ class AudioLLMModel(nn.Module):
             adapter_config = Wav2Vec2BertConfig(add_adapter=True, output_hidden_size=embed_dim)
             return Wav2Vec2BertAdapter(adapter_config).to("cuda", torch.bfloat16)
         elif type == "simple-linear":
-            hidden_dim = 2048
-            return nn.Sequential(
-                nn.Linear(encoder_dim * self.config.model.downsample_factor, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, embed_dim),
-            ).to("cuda", torch.bfloat16)
+            return SimpleLinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
@@ -158,27 +154,43 @@ class AudioLLMModel(nn.Module):
         embed_loss = self.alpha * self.MSELoss(audio_embeddings, text_embeddings) + self.beta * (1 - self.CosSim(audio_embeddings, text_embeddings)).mean()
         return SimpleNamespace(loss=embed_loss)
 
-    def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tensor:
+    def _process_audio_features(self, audio_features: Union[Tensor, Dict[str, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
         # encode and project audio features
+        attention_mask = None
+        if isinstance(audio_features, dict) and "attention_mask" in audio_features:
+            attention_mask = audio_features["attention_mask"]
+            
         if "mimi" in self.config.model.encoder_model_name:
             audio_encoded = self.audio_encoder(audio_features).audio_codes
-
         elif "BiCodec" in self.config.model.encoder_model_name:
             audio_encoded = self.audio_encoder(audio_features)
         else:
             audio_encoded = self.audio_encoder(audio_features).last_hidden_state
 
         audio_encoded = self.audio_encoder.prepare_for_projection(audio_encoded)
+        audio_mask = None
 
-        if self.config.model.projector == "simple-linear":
-            audio_encoded = audio_encoded.unfold(1, self.config.model.downsample_factor, self.config.model.downsample_factor).flatten(2)
-        
-        return self.projector(audio_encoded)
+        # for the projectors that handle attention masks, use their functionality
+        if hasattr(self.projector, "forward") and "attention_mask" in self.projector.forward.__code__.co_varnames:
+            try:
+                # new projector implementation that returns both features and mask
+                audio_encoded, audio_mask = self.projector(audio_encoded, attention_mask=attention_mask)
+            except ValueError:
+                # fallback for older implementations that might have updated signature but don't return mask
+                audio_encoded = self.projector(audio_encoded, attention_mask=attention_mask)
+        else:
+            # for backward compatibility with projectors that don't accept attention_mask
+            if attention_mask is not None:
+                # apply mask directly to features for old projectors that can't handle masks
+                audio_encoded = audio_encoded * attention_mask.unsqueeze(-1)
+            audio_encoded = self.projector(audio_encoded)
+            
+        return audio_encoded, audio_mask
     
     def _combine_embeddings(
         self, text_embeds: Tensor, audio_embeds: Tensor, 
         insertion_indices: List[Tensor], labels: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None
+        attention_mask: Optional[Tensor] = None, audio_attention_mask: Optional[Tensor] = None
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
@@ -200,8 +212,14 @@ class AudioLLMModel(nn.Module):
                     combined_labels_list.append(combined_labels)
 
                 if att_mask is not None:
-                    # set attention mask for audio embeddings
-                    audio_mask = torch.ones(D, dtype=att_mask.dtype, device=att_mask.device)
+                    # Handle attention mask for audio tokens
+                    if audio_attention_mask is not None:
+                        # Use the proper audio attention mask if available
+                        audio_mask = audio_attention_mask[i].to(att_mask.device, att_mask.dtype)
+                    else:
+                        # Default to all ones if no specific audio mask
+                        audio_mask = torch.ones(D, dtype=att_mask.dtype, device=att_mask.device)
+                        
                     combined_att_mask = torch.cat([att_mask[:idx], audio_mask, att_mask[idx:]], dim=0)
                     combined_attention_mask_list.append(combined_att_mask)
             else:
@@ -234,12 +252,32 @@ class AudioLLMModel(nn.Module):
         return combined_embeds, combined_labels, combined_attention_mask
     
     def save_projector(self, save_path: str) -> None:
-        # save only the projector weights
-        torch.save(self.projector.state_dict(), save_path)
+        # save projector and possibly encoder weights
+        save_dict = {
+            'projector': self.projector.state_dict()
+        }
+        
+        # If we're training the full encoder, also save its weights
+        if hasattr(self.config.model, 'train_encoder_full') and self.config.model.train_encoder_full:
+            save_dict['encoder'] = self.audio_encoder.audio_encoder.state_dict()
+            
+        torch.save(save_dict, save_path)
         
     def load_projector(self, load_path: str) -> None:
-        # load only the projector weights
-        self.projector.load_state_dict(torch.load(load_path, weights_only=True))
+        # load projector and possibly encoder weights
+        checkpoint = torch.load(load_path, weights_only=True)
+        
+        # Always load projector weights
+        if isinstance(checkpoint, dict) and 'projector' in checkpoint:
+            self.projector.load_state_dict(checkpoint['projector'])
+        else:
+            # Backward compatibility with old checkpoints that only saved projector
+            self.projector.load_state_dict(checkpoint)
+        
+        # Load encoder weights if they exist in the checkpoint and we're set to train them
+        if isinstance(checkpoint, dict) and 'encoder' in checkpoint and \
+           hasattr(self.config.model, 'train_encoder_full') and self.config.model.train_encoder_full:
+            self.audio_encoder.audio_encoder.load_state_dict(checkpoint['encoder'])
 
     def forward(
         self, input_ids: Tensor, audio_features: Tensor, insertion_indices: Tensor,
@@ -265,11 +303,12 @@ class AudioLLMModel(nn.Module):
             audio_ids_tensor = torch.tensor(audio_ids).to("cuda", torch.int64)
             audio_embeds = self.lm.get_input_embeddings()(audio_ids_tensor)
             audio_embeds.requires_grad_(True)
+            audio_attention_mask = None  # For BiCodec tokens, all positions are valid
 
-        # If embed_loss (TinyAlign) is used:
+        # if embed_loss (TinyAlign) is used:
         if self.config.training.loss=="embed_loss":
             text_embeddings = self.lm.get_input_embeddings()(trunced_text_ids)
-            audio_embeddings = self._process_audio_features(audio_features)
+            audio_embeddings, _ = self._process_audio_features(audio_features)
             return self.embed_loss(audio_embeddings, text_embeddings)
 
         # calculate audio reconstruction loss if specified
@@ -278,14 +317,16 @@ class AudioLLMModel(nn.Module):
             return self._audio_reconstruction_loss(audio_wavs, output_wavs, "L1")
 
         if not self.config.model.expand_embeds:
-            # process audio and text features
-            audio_embeds = self._process_audio_features(audio_features)
+            # process audio and text features, getting both embeddings and attention mask
+            audio_embeds, audio_attention_mask = self._process_audio_features(audio_features)
+        else:
+            audio_attention_mask = None  # Set earlier for expand_embeds case
         
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
-        # combine embeddings and get padded sequences
+        # combine embeddings and get padded sequences, properly handling audio attention mask
         combined_lists = self._combine_embeddings(
-            text_embeds, audio_embeds, insertion_indices, labels, attention_mask
+            text_embeds, audio_embeds, insertion_indices, labels, attention_mask, audio_attention_mask
         )
         combined_embeds, combined_labels, combined_attention_mask = self._pad_sequences(combined_lists)
 
@@ -319,13 +360,14 @@ class AudioLLMModel(nn.Module):
         **generation_kwargs: Any
     ) -> Tensor:
         
-        # process audio and text features
-        audio_embeds = self._process_audio_features(audio_features)
+        # process audio and text features, getting both embeddings and attention mask
+        audio_embeds, audio_attention_mask = self._process_audio_features(audio_features)
         text_embeds = self.lm.get_input_embeddings()(input_ids)
         
         # combine embeddings and get padded sequences
         combined_lists = self._combine_embeddings(
-            text_embeds, audio_embeds, insertion_indices, attention_mask=attention_mask
+            text_embeds, audio_embeds, insertion_indices, 
+            attention_mask=attention_mask, audio_attention_mask=audio_attention_mask
         )
         combined_embeds, _, combined_attention_mask = self._pad_sequences(combined_lists)
 

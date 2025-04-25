@@ -4,7 +4,15 @@ Starting off with processing of audio signals, we will cover the Fourier Transfo
 
 \subsection{Alignment Models}
 
-\subsubsection{Baseline}
+In this section of the thesis we will cover all the different alignment methods and models we have utilized in our experiments. We will go over their architectural differences.
+
+\subsubsection{Baselines}
+
+As a very simple baseline, we will report on how a simple linear layer between the audio encoder and LLM performs. The baseline is thus a simple linear transformation such that:
+
+$$ \mathbf{X}_{out} = \mathbf{A}\mathbf{X}_{in} $$
+
+It is hypothesized that a simple linear transformation will not be able to transform the encoded audio features meaningfully into the embedding space that the LLM operates in. As such, it will serve as a suitable baseline from which we can compare the more sophisticated methods against.
 
 \subsubsection{MLP (Ultravox Style)}
 
@@ -22,12 +30,22 @@ Many of the pre-trained models that we have incorporated into the project experi
 
 As the models were trained on 16kHz data, providing them with 48kHz data would not be optimal. It is, however, possible to downsample signals between two different rates with ease\footnote{as long as ratio is a natural number}. Assume in our case, we want to go from 48kHz to 16kHz;  $\frac{48}{16} - 1 = \frac{3}{1} - 1 = 2$ zeros between every point in the original signal. A \textit{low pass filter} is then applied on half of lowest frequency of the two (8kHz). This ensures no aliasing occurs when we downsample the signal. In the example we then sample every 3rd point in the now filtered signal.
 
-CoRal dataset is recoreded in 48kHz and we downsample it to 16kHz
+CoRal dataset is recoreded in 48kHz and we downsample it to 16kHz; Librispeech is sampled at 16k and no downsampling is required.
 
 \subsubsection{Data Augmentation}
 
-\textbf{Band Stop Filtering}
+When working with any kind of data, for most machine learning tasks or models, the more data available the better. The more complex and diverse a true data distribution is, the more data is generally required for sufficient models to learn the patterns and distributions in the data. However, labeling and collecting data is of course expensive, as it requires humans 'experts' to sit down, collect and annotate the data. In the domain of audio, this can be quite expensive, as transcription of audio is a time consuming menial task.
+
+In such cases, data augmentation is a common technique to artificially increase the amount of data available to train models. The augmentations usually rely on simple and easy transformations of training data, such that humans would easily remark that it is a duplicate sample. However, such transformations have proven in some domains to be quite beneficial. For example, in vision domains, augmentations such as flipping, cropping, rotation and noise diffusion can all help models gain a better generalization of the data.\cite{perez_effectiveness_2017}
+
+In regards to audio, augmentations exists as well. Augmentations here can help alleviate if the data is distributed around too few speakers. It is easy to convince oneself, for example, if that the audio one is training on, is from male speakers, that it would have a hard time identifying speech from female speakers. Even moreso, as different people speak with different accents, dialects and pronunciations. Data augmentation can possibly alleviate the problem to a certain degree.
+
+In order to see if augmentations can help one of our models in any capacity, we will implement three augmentations and try them out individually. They are \textit{amplitude noise diffusion}, \textit{band stop filtering}, and \textit{time stretching}. These techniques were explored in a recent paper by \cite{anidjar_whisper_2024}
 
 \textbf{Amplitude Noise}
 
 \textbf{Band Stop Filtering}
+
+\textbf{Band Stop Filtering}
+
+\subsection{Phonetic Alignment Experiments}
