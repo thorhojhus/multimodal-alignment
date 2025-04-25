@@ -30,4 +30,4 @@ module swap cuda/12.6.3
 
 cd /work3/s224233/shared/rundir
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-3-12b-it model.encoder_model_name=openai/whisper-large-v3 model.projector=conv model.downsample_factor=8 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks training.num_epochs=1000 wandb.run_name="13 - Gemma 3 12B + Whisper Large + CNN \(Coral\) [no 4bit]"
+python train.py model.lm_model_name=google/gemma-3-12b-it model.encoder_model_name=openai/whisper-large-v3 model.projector=conv model.downsample_factor=8 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks training.batch_size=4 training.num_epochs=3 wandb.run_name="13 - Gemma 3 12B + Whisper Large + CNN \(Coral\) [no 4bit]"
