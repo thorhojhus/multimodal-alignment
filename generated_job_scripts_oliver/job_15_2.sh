@@ -30,4 +30,4 @@ module swap cuda/12.6.3
 
 cd /work3/s224233/shared/rundir
 source .venv/bin/activate
-python train.py model.lm_model_name=google/gemma-3-12b-it model.encoder_model_name=syvai/hviske-v2 model.audio_tokenizer=true model.audio_tokenizer_vocab_size=8192 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks training.batch_size=4 training.num_epochs=3 wandb.run_name="15 - Gemma 3 12B + Hviske V2 + Audio Codec \(Coral\) [no 4bit]"
+python train.py model.lm_model_name=google/gemma-3-12b-it model.encoder_model_name=syvai/hviske-v2 model.audio_tokenizer=true model.audio_tokenizer_vocab_size=8192 dataset.name=coral wandb.enabled=true +wandb.project=benchmarks training.batch_size=4 training.num_epochs=3 wandb.run_name="15 - Gemma 3 12B + Hviske V2 + Audio Codec \(Coral\) \[no 4bit\]"
