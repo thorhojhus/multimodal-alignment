@@ -1,6 +1,6 @@
 \subsection{Automatic Speech Recognition}
 
-More and more in our daily lives, people are interfacing with technologies that utilize voice recognition in some aspects. Examples are widely randing from voice assistants like Siri, Alexa, and Google Assistant, to the voice recognition software in cars allowing one to call and answer texts, as well as auto captioning for videos, television and live stream - just to name a few \cite{YouTubeCaptions}\cite{HuggingFaceASR}\cite{AppleSiri}
+Increasingly today all over the modern world, people are interfacing with technologies that utilize voice recognition in some aspects. Examples are widely ranging from voice assistants like Siri, Alexa, and Google Assistant, to the voice recognition software in cars allowing one to call and answer texts, as well as auto captioning for videos, television and live stream - just to name a few \cite{YouTubeCaptions}\cite{HuggingFaceASR}\cite{AppleSiri}
 
 Exotically, these technologies and advances have also been utilized and implemented in the animal kingdom's domain for classifying for example pigs sounds, as well as trying to discern dolphin sounds.
 
@@ -175,7 +175,47 @@ Z_3 &= Z_2 + \text{FFN}(Z_2) \\
 \text{output} &= \text{LayerNorm}(Z_3)
 \end{align}
 
-\textbf{Conformer Blocks}
-% Move this
-As introduced in \cite{gulati_conformer_2020}
+\subsection{Positional Encoding}
+
+Employed in most models is a positional encoding operation, which adds positional information to the different input parts. Desireable features for positional encodings are the following:
+
+\begin{itemize}
+    \item The positional encoding should be unique for the positions.
+    \item The positional encoding should be differentiable to be of use during training.
+    \item The positional encoding should be able to extend to different input lengths outside those seen during training.
+    \item The positional encoding should linearly be able to interpolate to the other encodings.
+\end{itemize}
+
+The fourth item was is inspired by Vaswani et al. in the original transformer paper where they hypothesize that models can then learn relative positions easily from such properties\cite{vaswani_attention_2017}.
+
+There are several ways to compute the positional encoding, but a common one seen previously is the sine-cosine positional encoding, which is usually calculated as follows:
+
+\begin{align}
+    \begin{split}
+        PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
+        PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
+    \end{split}
+    \label{eq:pos_enc_sin}
+\end{align}
+
+In equation \ref{eq:pos_enc_sin}, $pos$ is the position of the token in the sentence, $i$ is the dimension of the positional encoding, $d_{model}$ is the dimension of the model, and $n$ is usually a constant, such as $10000$ initially proposed in the transformers paper\cite{vaswani_attention_2017}.
+
+One can think of it as a kind of "binary encoding" but with sine and cosine functions. 
+
+Positional encodings allow the model to learn the absolute and relative position of the different words and tokens. In figure \ref{fig:penc} you can see how the encoding would look for a sample sentence.
+
+
+% WAV2VEC (and its derivatives) models here
+
+\subsection{Whisper - A transformer based model for ASR}
+
+Introduced by OpenAI in 2022, Whisper is a transformer-based model designed for automatic speech recognition. Building on the learnings of then recent advances in self-supervised learning in the auditory domain, primarily from the Wav2Vec 2.0 model. \cite{radford_robust_2022}
+
+One of the primary hurdles with Wav2Vec 2.0, is that the model's primary purpose is in a downstream tasks of ASR. This introduces a need of an additional step in the form of finetuning, which can require time, data and expertise. The goal of whisper was to provide a complete and efficient "out of the box" solution for transcription and translation.
+
+As such, Radford et al. introduced a weakly supervised element to its training process, with around 680,000 hours of audio, covering 117 languages.
+
+\subsubsection{Model architecture}
+
+As it follows the transformer architecture, the models is a series of encoders followed by a series of decoders. The input is first processed to a log-mel spectogram followed by a convolutional layer, after which positional encodings are added. The positional encodings for Whisper are simple sinusoidal encodings, as described in the transformers section.
 

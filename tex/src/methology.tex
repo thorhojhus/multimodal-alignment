@@ -40,12 +40,28 @@ In such cases, data augmentation is a common technique to artificially increase 
 
 In regards to audio, augmentations exists as well. Augmentations here can help alleviate if the data is distributed around too few speakers. It is easy to convince oneself, for example, if that the audio one is training on, is from male speakers, that it would have a hard time identifying speech from female speakers. Even moreso, as different people speak with different accents, dialects and pronunciations. Data augmentation can possibly alleviate the problem to a certain degree.
 
-In order to see if augmentations can help one of our models in any capacity, we will implement three augmentations and try them out individually. They are \textit{amplitude noise diffusion}, \textit{band stop filtering}, and \textit{time stretching}. These techniques were explored in a recent paper by \cite{anidjar_whisper_2024}
+In order to see if augmentations can help one of our models in any capacity, we will implement three augmentations and try them out individually. They are \textit{amplitude noise diffusion}, \textit{band stop filtering}, and \textit{pitch shifting}. These techniques were explored in a recent paper by. \cite{anidjar_whisper_2024} In this paper, the authors explore the three augmentations, and combinations of them, to see how it help the Whisper model perform better on low-resource languages, particularly portuguese and arabic. They find that the results are quite promising. They furthermore only work with few speakers and few hours of training data.
+
+The dataset we work with is not as "low-resourced" (andet ord) than the one they explore in the paper. They also have fewer speakers as part of the data they train on, so expected is that data augmentation will not help as much in our case, as it does in their case.
 
 \textbf{Amplitude Noise}
 
-\textbf{Band Stop Filtering}
+One very simple idea is to add noise to the audio signal in question. The noise can be sampled in different ways, usually it is either gaussian or uniformly distributed though. In the case of a normal distribution, the noise is sampled from one with a mean of 0, and a variance equal to the level of noise one wishes to add. In the paper, the authors applied a uniform distribution instead, ranging from 0.001 to 0.05. The noise is then added to the original signal after multiplying it.
+
+$$ X_{new} = X_{original} + X_{original} \cdot U(\text{low}, \text{high}) $$
+
+Note, the noise is sampled at a point basis; i.e., the noise at point $i$ is independent of the noise at point $j$. The probability of adding noise to a sample can be set, and from the paper we set it to 20\% of the time. As such, after 5 epochs, all training data have been sampled at least once with noise on average.
 
 \textbf{Band Stop Filtering}
 
-\subsection{Phonetic Alignment Experiments}
+Band stop filtering is a technique used in signal processing to filter out a range of frequencies from a signal. This can be a more destructive augmentation techniques than adding noise, as it can remove the frequencies that are important for the underlying speech signal. For a graphical representation of a band stop filter, one can look at figure. %\ref{fig:bandstop_spectogram}
+
+\textbf{Pitch Shifting}
+
+Finally, we'll explore the idea of pitch shifting the data. Pitch shifting is a technique in which you shift the frequencies of the audio data up or down, to simulate new pitches.
+
+\subsubsection{Phonetic Alignment Experiments}
+
+The international phonetic alphabet (IPA) is a an alphabet representing the sounds, intonations and seperation of syllanles, based on the latin script. It can be considered a standardized way of representing the auditory speech of words. In that regards, the IPA is a language agnostic way to represent distinct languages in a written format. The gain here is believed to be the\footnote{}
+
+We're motivated to attempt to do automatic speech recognition in the phonetic domain. Similar work has been carried out by the Facebook AI research team.\cite{xu_simple_2021}
