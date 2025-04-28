@@ -4,13 +4,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import hydra
 import torch
-from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from transformers import AutoProcessor
 from dataset.audio_dataset import AudioChatDataset, collate_fn
 from models.audio_llm import AudioLLMModel
 from utils import load_checkpoint
 from utils import generate_batch
+from utils import calculate_metrics
 from config import AppConfig
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def make_plots(model: AudioLLMModel, cfg: AppConfig) -> None:
         test_dataset, 
         batch_size=1, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=test_dataset.T), 
-        shuffle=True,
+        # shuffle=True,
     )
     
     load_checkpoint(
@@ -84,6 +84,8 @@ def make_plots(model: AudioLLMModel, cfg: AppConfig) -> None:
             model, batch, cfg.model.lm_model_name, model.tokenizer, return_hidden_states=True
         )
 
+        scatter_wer_plots("/zhome/c2/2/146508/multimodal-alignment/runevaluations/5_gemma9b_hviske_cnn_evaluations.csv")
+
         hidden_states_ = []
         for i in range(len(hidden_states[1:])):
             hidden_states_.append(hidden_states[i+1][-1][0].float())
@@ -109,11 +111,12 @@ def make_plots(model: AudioLLMModel, cfg: AppConfig) -> None:
             # aggregate end
             
             # Override aggregation temporarily
-            # audio_embeddings_pooled = audio_embeddings
+            audio_embeddings_pooled = audio_embeddings
             
             similarity_generated = torch.empty((audio_embeddings_pooled.shape[0], hidden_states_.shape[0]))
             for i in range(audio_embeddings_pooled.shape[0]):
                 for j in range(hidden_states_.shape[0]):
+                    breakpoint()
                     similarity_generated[i, j] = torch.nn.functional.cosine_similarity(
                         audio_embeddings_pooled[i],
                         hidden_states_[j][0],
@@ -132,7 +135,7 @@ def make_plots(model: AudioLLMModel, cfg: AppConfig) -> None:
             # Place the texts below the plot
             plt.figtext(0.1, -0.1, f"Generated Text: {generated_texts[0]}", wrap=True, fontsize=10, ha='left')
             plt.tight_layout()
-            plt.savefig("/zhome/c2/2/146508/multimodal-alignment/similarity_figures/similarity_generated.png", dpi=300, bbox_inches='tight')
+            plt.savefig("/zhome/c2/2/146508/multimodal-alignment/similarity/similarity_generated.png", dpi=300, bbox_inches='tight')
 
             similarity_gt = torch.empty((audio_embeddings_pooled.shape[0], text_embeddings.shape[0]))
             for i in range(audio_embeddings_pooled.shape[0]):
@@ -156,11 +159,39 @@ def make_plots(model: AudioLLMModel, cfg: AppConfig) -> None:
             # Place the texts below the plot
             plt.figtext(0.1, -0.2, f"Ground Truth Text: {ground_truths[0]}", wrap=True, fontsize=10, ha='left')
             plt.tight_layout()
-            plt.savefig("/zhome/c2/2/146508/multimodal-alignment/similarity_figures/similarity_gt.png", dpi=300, bbox_inches='tight')
+            plt.savefig("/zhome/c2/2/146508/multimodal-alignment/figures/similarity_gt.png", dpi=300, bbox_inches='tight')
             return
 
+
+def scatter_wer_plots(csv_path: str) -> None:
+    """Plot a WER versus text length scatter plot"""
+    import csv
+    generated = []
+    ground_truth = []
+    with open(csv_path, 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            generated.append(row['Generated'])
+            ground_truth.append(row['Ground Truth'])
+    
+    # Calculate lengths of ground truth texts and WERs
+    lengths = [len(text.split()) for text in ground_truth]
+    _, _, wers, *_ = calculate_metrics(generated, ground_truth)
+
+    # Create 2D histogram
+    plt.figure(figsize=(8, 6))
+    plt.hist2d(lengths, wers, bins=30, cmap='viridis')
+    plt.colorbar(label='Count')
+    plt.title('Reference Text Length vs Word Error Rate')
+    plt.xlabel('Length of Reference Text (words)')
+    plt.ylabel('Word Error Rate')
+    plt.grid(True, alpha=0.3)
+
+    # Save the plot
+    plt.savefig("/zhome/c2/2/146508/multimodal-alignment/figures/length_vs_wer.png", dpi=300)
+
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
-def main(cfg: DictConfig):
+def main(cfg: AppConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -173,6 +204,7 @@ def main(cfg: DictConfig):
 
     model = AudioLLMModel(cfg)
     make_plots(model, cfg)
+
 
 if __name__ == "__main__":
     main()
