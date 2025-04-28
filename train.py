@@ -300,28 +300,40 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
                 )
                 
                 # run WER/CER evaluation
-                wer, cer, corrected_wer_list = run_evaluation(
-                    model=model,
-                    test_dataset=test_dataset,
-                    tokenizer=model.tokenizer,
-                    logger=logger,
-                    n_samples=cfg.eval.n_samples,
-                    config=cfg,
-                    batch_size=cfg.eval.batch_size or cfg.training.batch_size
-                )
-                
-                logger.info(
-                    f"Step {global_step} Evaluation | "
-                    f"Eval Loss: {eval_loss:.4f} | "
-                    f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f}"
-                )
+                if cfg.eval.enabled:
+                    wer, cer, corrected_wer_list = run_evaluation(
+                        model=model,
+                        test_dataset=test_dataset,
+                        tokenizer=model.tokenizer,
+                        logger=logger,
+                        n_samples=cfg.eval.n_samples,
+                        config=cfg,
+                        batch_size=cfg.eval.batch_size or cfg.training.batch_size
+                    )
+
                 if cfg.wandb.enabled:
-                    wandb.log({
-                        "eval/loss": eval_loss,
-                        "eval/wer": wer,
-                        "eval/wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-                        "eval/cer": cer
-                    })
+                    if cfg.eval.enabled:
+                        wandb.log({
+                            "eval/loss": eval_loss,
+                            "eval/wer": wer,
+                            "eval/wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
+                            "eval/cer": cer
+                        })
+                    
+                        logger.info(
+                            f"Step {global_step} Evaluation | "
+                            f"Eval Loss: {eval_loss:.4f} | "
+                            f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f}"
+                        )
+
+                    else:
+                        logger.info(
+                            f"Step {global_step} Evaluation | "
+                            f"Eval Loss: {eval_loss:.4f}"
+                        )
+                        wandb.log({
+                            "eval/loss": eval_loss
+                        })
 
             # reset batch timer
             batch_start_time = time.monotonic()
@@ -331,16 +343,26 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
         epoch_time = time.monotonic() - epoch_start_time
         avg_batch_time = epoch_time / len(dataloader)
         
-        # end of epoch evaluation
-        logger.info("\nRunning end of epoch evaluation")
-        eval_loss, wer, cer, corrected_wer_list = run_evaluation_with_loss(
+        eval_loss = calculate_eval_loss(
             model=model, 
             test_dataset=test_dataset, 
             tokenizer=model.tokenizer, 
             logger=logger, 
             n_samples=None, 
-            config=cfg
+            batch_size=cfg.eval.batch_size or cfg.training.batch_size
         )
+
+        if cfg.eval.enabled:
+            wer, cer, corrected_wer_list = run_evaluation(
+                model=model,
+                test_dataset=test_dataset,
+                tokenizer=model.tokenizer,
+                logger=logger,
+                config=cfg,
+                n_samples=None,
+                batch_size=cfg.eval.batch_size or cfg.training.batch_size
+            )
+            
         
         # save checkpoint at end of epoch (always latest, and best if applicable)
         is_best = False
@@ -358,23 +380,38 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
             global_step, eval_loss, 
             cfg.training.checkpoint_dir, logger, is_best
         )
-            
-        logger.info(
-            f"Epoch {epoch+1} Summary | "
-            f"Average Train Loss: {avg_loss:.4f} | "
-            f"Eval Loss: {eval_loss:.4f} | "
-            f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
-            f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
-            f"Average Batch Time: {avg_batch_time:.2f}s"
-        )
-        if cfg.wandb.enabled:
-            wandb.log({
-                "train/epoch_loss": avg_loss,
-                "eval/epoch_loss": eval_loss,
-                "eval/epoch_wer": wer,
-                "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-                "eval/epoch_cer": cer
-            })
+        
+        if cfg.eval.enabled:
+            logger.info(
+                f"Epoch {epoch+1} Summary | "
+                f"Average Train Loss: {avg_loss:.4f} | "
+                f"Eval Loss: {eval_loss:.4f} | "
+                f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
+                f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
+                f"Average Batch Time: {avg_batch_time:.2f}s"
+            )
+            if cfg.wandb.enabled:
+                wandb.log({
+                    "train/epoch_loss": avg_loss,
+                    "eval/epoch_loss": eval_loss,
+                    "eval/epoch_wer": wer,
+                    "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
+                    "eval/epoch_cer": cer
+                })
+        else:
+            logger.info(
+                f"Epoch {epoch+1} Summary | "
+                f"Average Train Loss: {avg_loss:.4f} | "
+                f"Eval Loss: {eval_loss:.4f} | "
+                f"Epoch Time: {timedelta(seconds=int(epoch_time))} | "
+                f"Average Batch Time: {avg_batch_time:.2f}s"
+            )
+            if cfg.wandb.enabled:
+                wandb.log({
+                    "train/epoch_loss": avg_loss,
+                    "eval/epoch_loss": eval_loss
+                })
+
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config")
 def main(hydra_conf: DictConfig):
