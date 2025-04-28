@@ -4,6 +4,7 @@ import typing
 
 import torch
 import transformers
+import os
 from config import AppConfig
 
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
@@ -103,9 +104,9 @@ class AudioLLMModel(nn.Module):
         ) if self.config.model.load_in_4bit else None
 
         # initialize language model with flash attention and liger kernels for memory efficiency
-        lm = AutoLigerKernelForCausalLM.from_pretrained(
+        lm = AutoModelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
-            attn_implementation="eager",
+            attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config
@@ -253,7 +254,6 @@ class AudioLLMModel(nn.Module):
         combined_attention_mask = None
         if attention_mask_list:
             combined_attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
-            
             
         return combined_embeds, combined_labels, combined_attention_mask
     

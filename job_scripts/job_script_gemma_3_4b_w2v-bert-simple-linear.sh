@@ -29,4 +29,4 @@ module swap cuda/12.8.0
 cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 
-python train.py model.lm_model_name=google/gemma-3-4b-it model.projector=simple model.encoder_model_name=facebook/w2v-bert-2.0 model.train_encoder_full=true training.batch_size=8 training.gradient_accumulation_steps=2 model.load_in_4bit=true wandb.enabled=true training.gradient_clip_norm=10.0 training.lr=1e-4 training.warmup_steps=500 model.downsample_factor=10
+python train.py model.lm_model_name=google/gemma-2-2b-it model.projector=simple model.encoder_model_name=facebook/w2v-bert-2.0 model.train_encoder_full=true training.batch_size=8 training.gradient_accumulation_steps=2 model.load_in_4bit=true wandb.enabled=true training.gradient_clip_norm=10.0 training.lr=1e-4 training.warmup_steps=500 model.downsample_factor=10
