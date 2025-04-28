@@ -74,7 +74,7 @@ def parse_csv(file_path) -> list[dict[str, str | int]]:
     }
     
     result = []
-    last_generated_id = 10
+    last_generated_id = 21
     
     with open(file_path, 'r', newline='') as csvfile:
         reader = csv.reader(csvfile)
@@ -158,4 +158,4 @@ if __name__ == "__main__":
         if i % 2 == 0:
             write_job_template("oliver", csv_dict_to_config_string(pdict), pdict['id'])
         else:
-            write_job_template("thor", csv_dict_to_config_string(pdict), pdict['id'])
+            write_job_template("oliver", csv_dict_to_config_string(pdict), pdict['id'])
