@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
 import jiwer
 import wandb
+from config import AppConfig
 from typing import Tuple, List
 
 def save_to_temp_mp3(waveform: torch.Tensor, sample_rate: int):
@@ -149,7 +150,8 @@ def generate_batch(
     batch: dict,
     model_name: str,
     tokenizer,
-    max_new_tokens: int = 100
+    max_new_tokens: int = 100,
+    return_hidden_states: bool = False
 ) -> Tuple[List[str], List[str]]:
     user_prompts, user_prompt_masks = get_user_prompts_batch(batch["input_ids"], model_name, tokenizer)
     ground_truths = get_ground_truths_batch(batch["input_ids"], model_name, tokenizer)
@@ -186,12 +188,17 @@ def generate_batch(
             attention_mask=user_prompt_masks,
             max_new_tokens=max_new_tokens,
             do_sample=False,
+            return_dict_in_generate=return_hidden_states,
+            output_hidden_states=return_hidden_states,
         )
 
+    sequences = outputs["sequences"] if return_hidden_states else outputs
     generated_texts = [
         tokenizer.decode(output.tolist(), skip_special_tokens=True)
-        for output in outputs
+        for output in sequences
     ]
+    if return_hidden_states:
+        return generated_texts, ground_truths, outputs["hidden_states"], outputs["sequences"]
 
     return generated_texts, ground_truths
 
@@ -214,7 +221,7 @@ def run_evaluation(
     tokenizer,
     logger: logging.Logger,
     n_samples: int,
-    config,
+    config: AppConfig,
     batch_size: int = 64
 ) -> Tuple[float, float]:
     """

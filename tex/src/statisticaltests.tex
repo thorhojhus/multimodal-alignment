@@ -20,7 +20,11 @@ In both equations \ref{eq:wer} and \ref{eq:cer}, $S$ is the number of substituti
 
 An inherent property of the this metric is that it is unbounded upwards, i.e., $$0 \leq \textrm{WER|CER} < \infty$$
 
-For example, if the produced text is \texttt{Automatic Text Recognition} and the reference text is \texttt{Automatic Speech Recognition}, then the WER would be $\frac{1}{3}$, because there is an substitution - if the produced text is instead \texttt{Automatic Recognition}, then the produced WER is still only $\frac{1}{3}$. This represents another caveeat with the metric; different kind of errors can produce the same error rates. If the lenght of the produced text is longer than the reference text, the produced error rate can be above 1.
+For example, if the produced text is \texttt{Automatic Text Recognition} and the reference text is \texttt{Automatic Speech Recognition}, then the WER would be $\frac{1}{3}$, because there is an substitution - if the produced text is instead \texttt{Automatic Recognition}, then the produced WER is still only $\frac{1}{3}$. This represents another caveeat with the metric; different kind of errors can produce the same error rates. If the lenght of the produced text is longer than the reference text, the produced error rate can be above 1. If a produced output is ,\texttt{test test test} but the ground truth is \texttt{test}, then the WER would be $3$.
+
+Another caveat with word error rate is errors produced when there is none or trivially none; for example, say a ground truth text is \texttt{"'Tis in 1993 that I was born"} but the generated text is \texttt{"It is in nineteen ninetythree that I was born"}. In this case, a word error rate of $4/7$ would be produced. That is a very high word error rate, however, looking at the generated text, the error is not remarkable; in fact, some mihgt claim that it is more correct (in modern English).
+
+Another consideration is that errors in shorter texts have higher impact than errors in longer texts.
 
 \subsubsection{Wilcoxon Signed Rank Test}
 The wilcoxon signed rank test is a non-parametric \textit{rank} test, and is used to compare the difference between two paired groups $\pmb{X}$ and $\pmb{Y}$. It is non-parametric in the sense that it does not assume what the underlying distribution is (which is usually a normal distribution) but instead assume that it is a \textit{symmetric} distribution around a central value. The distribution in question is around the difference between two samples $\pmb{Z} = \pmb{X} - \pmb{Y}$

@@ -1,32 +1,3 @@
-\subsection{Positional Encoding}
-
-Employed in most models is a positional encoding operation, which adds positional information to the different input parts. Desireable features for positional encodings are the following:
-
-\begin{itemize}
-    \item The positional encoding should be unique for the positions.
-    \item The positional encoding should be differentiable to be of use during training.
-    \item The positional encoding should be able to extend to different input lengths outside those seen during training.
-    \item The positional encoding should linearly be able to interpolate to the other encodings.
-\end{itemize}
-
-The fourth item was is inspired by Vaswani et al. in the original transformer paper where they hypothesize that models can then learn relative positions easily from such properties\cite{vaswani_attention_2017}.
-
-There are several ways to compute the positional encoding, but a common one seen previously is the sine-cosine positional encoding, which is usually calculated as follows:
-
-\begin{align}
-    \begin{split}
-        PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
-        PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
-    \end{split}
-    \label{eq:pos_enc_sin}
-\end{align}
-
-In equation \ref{eq:pos_enc_sin}, $pos$ is the position of the token in the sentence, $i$ is the dimension of the positional encoding, $d_{model}$ is the dimension of the model, and $n$ is usually a constant, such as $10000$ initially proposed in the transformers paper\cite{vaswani_attention_2017}.
-
-One can think of it as a kind of "binary encoding" but with sine and cosine functions. 
-
-Positional encodings allow the model to learn the absolute and relative position of the different words and tokens. In figure \ref{fig:penc} you can see how the encoding would look for a sample sentence.
-
 \textbf{RoPe: Rotary Position Embeddings}
 
 While the sinusoidal positional encoding is extremely enticing due to its simplicity and properties, another encoding was introduced by Su et al called RoPE (Rotary Position Embeddings)\cite{su_roformer_2023}.
@@ -58,6 +29,7 @@ Where $ m - n $ is the relative positions of input. The proposed solution is a l
 \end{figure}
 
 \subsection{Byte Pair Encoding (BPE)}
+\label{sec:bpe}
 
 Machine Learning models working in a natural language domain require that text is parsed in a way that makes it readable for the machines. For more modern machine learning models, the pre-processing on text is usually done on huge corpi of texts. A crucial first step it is figuring out the tokenization of the input texts. Text tokenization is the discretization of words, subwords and special characters into natural numbers - including spaces and newlines. For example, the Gemma 2 9B LLM model would tokenize text "The red brown fox jumps over the lazy dog" would be tokenized into a set of discrete tokens: 
 
@@ -67,7 +39,7 @@ Machine Learning models working in a natural language domain require that text i
         651 & 4320 & 8426 & 25341 & 36271 & 1163 & 573 & 27894 & 5929 \\
     \end{tabular}
 \end{center}
-This matches the length of our sentence, so each word (with prefixed spaces) have become their own tokens.\footnote{The tokenizer actually also produces a special token '2', which is a token specifying the "beginning of sentence".}  The tokenizer has also integrated the space (tokenized as '\_') between the words, and attached; this means that words like "hello" and " hello" - with a space - is represented as different tokens! However, what happens when a tokenizer is exposed to less common words such as some Danish words like "Rød grød med fløde" - the following sentence would be tokenized a bit differently:
+This matches the length of our sentence, so each word (with prefixed spaces) have become their own tokens.\footnote{The tokenizer actually also produces a special token '2', which is a token specifying the "beginning of sentence".}  The tokenizer has also integrated the space (tokenized as '\_') between the words, and attached; this means that words like "hello" and " hello" - with a space - is represented as different tokens! However, what happens when a tokenizer is exposed to less common words such as some Danish words like in the sentence "Rød grød med fløde" - the following sentence would be tokenized a bit differently as can be seen below:
 
 \begin{center}
     \begin{tabular}{c c c c c c c}
@@ -78,11 +50,11 @@ This matches the length of our sentence, so each word (with prefixed spaces) hav
 
 Here the words a split up  into subwords; 'grød' becomes '2434'(\_gr) and '35173'(ød) for example.
 
-The reason for the difference lies in the algorithm used for building up the vocabulary, the \textbf{Byte Pair Encoding} which briefly will be summarised below.\cite{sennrich-etal-2016-neural}
+The reason for the difference lies in the algorithm used for building up the vocabulary, the \textbf{Byte Pair Encoding} which briefly will be summarised below.
 
 \subsubsection{The algorithm}
 
-The algorithm was initially introduced by Philip Gage in the C users manual back in 1994, the purpose of the it being "compressing" text data using a ruleset of merges to frequently occuring symbols. 
+The algorithm was initially introduced by Philip Gage in the C users manual back in 1994, the purpose of the it being "compressing" text data using a ruleset of merges to frequently occuring symbols.\cite{sennrich-etal-2016-neural}
 
 Large Language Models all have an employed vocabulary size - larger models employ larger vocabularies. At a base level all characters receive their own unique tokens all seen in the training data.
 

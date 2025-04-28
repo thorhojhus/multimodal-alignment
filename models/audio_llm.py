@@ -4,8 +4,8 @@ import typing
 
 import torch
 import transformers
-from transformers import AutoModelForCausalLM
 import os
+from config import AppConfig
 
 from liger_kernel.transformers import AutoLigerKernelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
@@ -20,7 +20,7 @@ from models.tinyalign import BridgeFormer
 
 
 class AudioLLMModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: AppConfig):
         super().__init__()
         self.config = config
         # create model components
@@ -82,7 +82,7 @@ class AudioLLMModel(nn.Module):
         embed_dim = self.lm.get_input_embeddings().weight.shape[1]
         return MimiTokenizer(vocab_size=2048, 
                                      embed_dim=embed_dim,
-                                     use_hierarchical=self.config.model.get('use_hierarchical', True))
+                                     use_hierarchical=self.config.model.use_hierarchical)
 
     def _create_audio_tokenizer(self):
         from models.audio_tokenizer import AudioTokenizer
@@ -107,6 +107,12 @@ class AudioLLMModel(nn.Module):
         lm = AutoModelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
             attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            quantization_config=quantization_config
+        ) if "gemma-3" not in self.config.model.lm_model_name else transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.model.lm_model_name,
+            attn_implementation="eager",
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config

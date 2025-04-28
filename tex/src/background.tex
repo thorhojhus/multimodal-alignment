@@ -1,8 +1,12 @@
 \subsection{Automatic Speech Recognition}
 
-More and more in our daily lives, people are interfacing with technologies that utilize voice recognition in some aspects. Examples are widely randing from voice assistants like Siri, Alexa, and Google Assistant, to the voice recognition software in cars, and auto captioning for videos, television and live stream - amongst much more \cite{YouTubeCaptions}\cite{HuggingFaceASR}\cite{AppleSiri}
+Increasingly today all over the modern world, people are interfacing with technologies that utilize voice recognition in some aspects. Examples are widely ranging from voice assistants like Siri, Alexa, and Google Assistant, to the voice recognition software in cars allowing one to call and answer texts, as well as auto captioning for videos, television and live stream - just to name a few \cite{YouTubeCaptions}\cite{HuggingFaceASR}\cite{AppleSiri}
 
-The field behind these technologies is called Automatic Speech Recognition (ASR). ASR is the process of converting spoken language into text. Over the years, many innovations have been done to further improve the accuracy and reliability of these ASR systems that become more and more prevalent in society.
+Exotically, these technologies and advances have also been utilized and implemented in the animal kingdom's domain for classifying for example pigs sounds, as well as trying to discern dolphin sounds.
+
+The field behind these technologies is called Automatic Speech Recognition (ASR). ASR is the process of converting spoken language into text. Over the years, many innovations have been done to further improve the accuracy, reliability and speed of ASR systems that have become more and more prevalent in society. ASR system encompass both transcription and/or translation of spoken language into textual representations.
+
+A more specific and narrow application of ASR is to help personel with overcoming a certain language barrier; if it is possible to transcribe a spoken language into text, then translation to another language is more feasible. This is a very powerful tool for people who are not fluent in the spoken language of the country they are in, and can help them communicate with others. This is especially useful in situations where a person may not be able to read or write in the language of the country they are in, but can still understand spoken language.
 
 Furthermore, many of the current state of the art models excell in English and other major languages, but for low-resource languages, where the amount of data available for training is limited, is still a bit behind.
 
@@ -81,14 +85,137 @@ Bla bla bla
 
 \subsection{Sequence to Sequence models}
 
-\subsection{Auto Encoders and their variations}
+\subsection{Transformers}
+Probably one of the most revolutionary papers to be released for many machine learning fields in the last decade is the paper "Attention is All You Need". \cite{vaswani_attention_2017} This paper introduced the Transformer architecture, which while originally introduced for machine translations and sequence modelling, has seen widespread adoption in many other domains, such as computer vision and audio processing.
 
-\subsection{Transformers and Attention}
-Probably one of the most influential papers to be released for many machine learning fields in the last decade is the paper "Attention is All You Need" \cite{vaswani_attention_2017}. This paper introduced the Transformer architecture, which while originally introduced for machine translations and sequence modelling, has seen widespread adoption in many other domains, such as computer vision and audio processing.
+The Transformer architecture is based on the introduced concept of attention. Attention is a mechanism that allows the model to learn a weighted relative importance on different parts of the input sequence when producing the output. This is in contrast to the traditional Recurrent Neural Network (RNN) and Long Short Term Memory (LSTM) architectures, which process the input sequence sequentially, and as such, have a harder time capturing larger contextes. It consists of three main components. First, the input processing stage converts raw input (such as text) into a format suitable for the model often through tokenization and an embedding projection (see section \ref{sec:bpe}). Second, multiple transformer blocks process this information through self-attention and feed-forward mechanisms. Finally, the output processing stage maps the transformed representations to the desired output format through a linear layer followed by a softmax activation, producing probability distributions over possible outputs.
 
-The Transformer architecture is based on the introduced concept of attention. Attention is a mechanism that allows the model to learn a weighted relative importance on different parts of the input sequence when producing the output. This is in contrast to the traditional Recurrent Neural Network (RNN) and Long Short Term Memory (LSTM) architectures, which process the input sequence sequentially, and as such, have a harder time capturing larger contextes.
+\subsubsection{Input processing}
+For text processing, the input undergoes tokenization - a process that segments text into units called tokens. These tokens can represent individual characters, subwords, or whole words, depending on the tokenization strategy. Each token is mapped to a unique integer index, which is then transformed into a high-dimensional vector through an embedding layer. The embedding process transforms each token index $i$ into a dense vector through a learned embedding matrix $E$:
+\begin{equation}
+\text{embedding}(i) = E_i
+\end{equation}
 
-\textbf{Conformer Blocks}
-% Move this
-As introduced in \cite{gulati_conformer_2020}
+where $E \in \mathbb{R}^{|V|\times d} $ is the embedding matrix, $|V|$ is the vocab size, and $ d $ is the embedding dimension.
+
+Additionally, positional encodings are added to these embeddings to preserve sequence order information, since the self-attention mechanism itself is permutation-invariant. The positional encoding PE is added to these embeddings to inject position information. For position $po$s and dimension $d_{\text{model}}$, the encoding is computed as:
+\begin{align}
+PE_{(pos,2i)} &= \sin\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right) \\
+PE_{(pos,2i+1)} &= \cos\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+\end{align}
+
+where $pos$ is the position in the sequence and $i$ is the embedding index. The final input representation $X$ for each position $pos$ is the sum of its embedding and positional encoding:
+
+\begin{equation}
+X_{pos} = \text{embedding}(token_{pos}) + PE_{pos}
+\end{equation}
+
+\subsubsection{Self-attention}
+At its core, the architecture computes self-attention through scaled dot-product attention:
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V \label{eq:attention}
+\end{equation}
+
+where $Q$, $K$, and $V$ represent learned query, key, and value matrices respectively, and $d_k$ is the dimension of the key vectors. The scaling factor $\sqrt{d_k}$ prevents the dot products from growing too large in magnitude, which could push the softmax function into regions with extremely small gradients. This mechanism enables each position to attend to all other positions, facilitating the modeling of long-range dependencies while supporting parallel computation.
+
+The attention mechanism can be divided into projection, calculation of scores, softmax, and output. First the input sequence $X$ is projected to a query $Q$, key $K$, and value $V$ matrix by multiplying with the correspond weight matrix:
+
+\begin{equation}
+    Q = XW_Q, \quad K = XW_K, \quad V = XW_V
+\end{equation}
+
+
+The attention scores are then computed through matrix multiplication of Q and K, followed by scaling and then softmax:
+\begin{equation}
+    \text{Scores}_{ij} = \frac{\exp\left(\frac{(QK^\top)_{ij}}{\sqrt{d_k}}\right)}{\sum_{k=1}^n \exp\left(\frac{(QK^\top)_{ik}}{\sqrt{d_k}}\right)}
+\end{equation}
+
+These scores represent the relative importance of all other positions for each position in the sequence. The final attention output is obtained by multiplying these scores with $V$ to get a weighted sum of values:
+
+\begin{equation}
+\text{Output} = \text{Scores} \times V
+\end{equation}
+
+In practice multi-head attention is used, allowing the model to jointly attend to information from different representation subspaces:
+
+\begin{equation}
+\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h)W^O
+\end{equation}
+
+where each head computes attention (\ref{eq:attention}) with different learned projections of queries, keys, and values. This multi-head mechanism enables the model to capture various types of dependencies and patterns in the data simultaneously. The outputs of all heads are concatenated and linearly transformed by the output weight matrix $W^O$ to produce the final attention output for that layer.
+
+Each transformer block consists of two main sub-layers: multi-head attention followed by a position-wise feed-forward network, with each sub-layer wrapped in a residual connection and layer normalization. The computations can be expressed as:
+\begin{align}
+& \text{AttentionBlock}(X) = \text{LayerNorm}(X + \text{MultiHead}(X, X, X)) \\
+& \text{TransformerBlock}(X) = \text{LayerNorm}(\text{AttentionBlock}(X) + \text{FFN}(\text{AttentionBlock}(X)))
+\end{align}
+
+The position-wise feed-forward network (FFN) applies two linear transformations with a ReLU activation in between:
+
+\begin{equation}
+\text{FFN}(x) = \text{max}(0, xW_1 + b_1)W_2 + b_2
+\end{equation}
+
+where $W_1 \in \mathbb{R}^{d_{\text{model}} \times d_{\text{ff}}}$, $W_2 \in \mathbb{R}^{d_{\text{ff}} \times d_{\text{model}}}$, and $b_1, b_2$ are learnable parameters. The dimensionality $d_{\text{ff}}$ is typically larger than $d_{\text{model}}$, allowing the network to learn richer feature transformations.
+
+Layer normalization is applied to each sub-layer's output and computes the mean $\mu(x)$ and variance $\sigma(x)^2$ across the feature dimension:
+
+\begin{equation}
+\text{LayerNorm}(x) = \gamma \left(\frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}}\right) + \beta
+\end{equation}
+
+where $H$ is the hidden dimension, $\gamma$ and $\beta$ are learnable parameters, and $\epsilon$ is a small constant for numerical stability.
+The complete flow through a transformer block can thus be written as:
+
+\begin{align}
+Z_1 &= X + \text{MultiHead}(X, X, X) \\
+Z_2 &= \text{LayerNorm}(Z_1) \\
+Z_3 &= Z_2 + \text{FFN}(Z_2) \\
+\text{output} &= \text{LayerNorm}(Z_3)
+\end{align}
+
+\subsection{Positional Encoding}
+
+Employed in most models is a positional encoding operation, which adds positional information to the different input parts. Desireable features for positional encodings are the following:
+
+\begin{itemize}
+    \item The positional encoding should be unique for the positions.
+    \item The positional encoding should be differentiable to be of use during training.
+    \item The positional encoding should be able to extend to different input lengths outside those seen during training.
+    \item The positional encoding should linearly be able to interpolate to the other encodings.
+\end{itemize}
+
+The fourth item was is inspired by Vaswani et al. in the original transformer paper where they hypothesize that models can then learn relative positions easily from such properties\cite{vaswani_attention_2017}.
+
+There are several ways to compute the positional encoding, but a common one seen previously is the sine-cosine positional encoding, which is usually calculated as follows:
+
+\begin{align}
+    \begin{split}
+        PE_{(pos, 2i)} &= \sin\left(\frac{pos}{n^{2i/d_{model}}}\right) \\
+        PE_{(pos, 2i+1)} &= \cos\left(\frac{pos}{n^{2i/d_{model}}}\right)
+    \end{split}
+    \label{eq:pos_enc_sin}
+\end{align}
+
+In equation \ref{eq:pos_enc_sin}, $pos$ is the position of the token in the sentence, $i$ is the dimension of the positional encoding, $d_{model}$ is the dimension of the model, and $n$ is usually a constant, such as $10000$ initially proposed in the transformers paper\cite{vaswani_attention_2017}.
+
+One can think of it as a kind of "binary encoding" but with sine and cosine functions. 
+
+Positional encodings allow the model to learn the absolute and relative position of the different words and tokens. In figure \ref{fig:penc} you can see how the encoding would look for a sample sentence.
+
+
+% WAV2VEC (and its derivatives) models here
+
+\subsection{Whisper - A transformer based model for ASR}
+
+Introduced by OpenAI in 2022, Whisper is a transformer-based model designed for automatic speech recognition. Building on the learnings of then recent advances in self-supervised learning in the auditory domain, primarily from the Wav2Vec 2.0 model. \cite{radford_robust_2022}
+
+One of the primary hurdles with Wav2Vec 2.0, is that the model's primary purpose is in a downstream tasks of ASR. This introduces a need of an additional step in the form of finetuning, which can require time, data and expertise. The goal of whisper was to provide a complete and efficient "out of the box" solution for transcription and translation.
+
+As such, Radford et al. introduced a weakly supervised element to its training process, with around 680,000 hours of audio, covering 117 languages.
+
+\subsubsection{Model architecture}
+
+As it follows the transformer architecture, the models is a series of encoders followed by a series of decoders. The input is first processed to a log-mel spectogram followed by a convolutional layer, after which positional encodings are added. The positional encodings for Whisper are simple sinusoidal encodings, as described in the transformers section.
 

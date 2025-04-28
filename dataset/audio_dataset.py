@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torchaudio
 from torch import Tensor
+from config import AppConfig
 from transformers import AutoProcessor, AutoTokenizer, AutoFeatureExtractor
 from transformers import BatchFeature
 from datasets import Audio
@@ -17,7 +18,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
                  tokenizer=None, 
                  processor=None,
                  T=30,
-                 config=None):
+                 config: AppConfig=None):
         self.lm_model_name = lm_model
         self.dataset_name = dataset
         self.config = config
