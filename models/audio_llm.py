@@ -109,6 +109,12 @@ class AudioLLMModel(nn.Module):
             torch_dtype=torch.bfloat16,
             device_map="cuda",
             quantization_config=quantization_config
+        ) if "gemma-3" not in self.config.model.lm_model_name else transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.model.lm_model_name,
+            attn_implementation="eager",
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            quantization_config=quantization_config
         )
 
         # freeze lm parameters
