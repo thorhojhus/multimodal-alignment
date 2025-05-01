@@ -2,78 +2,94 @@ import logging
 from datetime import datetime
 
 import hydra
-import jiwer
 import torch
-import torch.utils.data.dataloader
 import wandb
+from transformers import AutoProcessor
+from config import AppConfig
+from dataset.audio_dataset import AudioChatDataset
+from models.audio_llm import AudioLLMModel
 from omegaconf import DictConfig
-from torch.utils.data import DataLoader
-from torchaudio.transforms import Resample
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from utils import (
+    load_checkpoint,
+    run_evaluation
+)
 
 # set up a module-level logger
 logger = logging.getLogger(__name__)
 
-@hydra.main(version_base="1.2", config_path="configs", config_name="config_eval")
-def main(cfg: DictConfig):
-    """ Test a third party model"""
-
+@hydra.main(version_base="1.2", config_path="configs", config_name="config")
+def main(hydra_conf: DictConfig):
     torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
+    # log the Hydra configuration for reproducibility
+    logger.info("Hydra Config:\n" + str(hydra_conf))
+    # initialize components using config values from Hydra
 
-    processor = WhisperProcessor.from_pretrained(cfg.model.third_party_model_id)
-    model = WhisperForConditionalGeneration.from_pretrained(cfg.model.third_party_model_id).to("cuda")
-
-    if cfg.dataset.name == "librispeech":
-        from dataset.load_librispeech import librispeech_dataset_dict
-        dataset = librispeech_dataset_dict["test.clean"]
-    elif cfg.dataset.name == "coral":
-        from dataset.load_coral import coral_dataset_dict
-        dataset = coral_dataset_dict["test"]
-        processor.get_decoder_prompt_ids(language="danish", task="transcribe")
-    elif cfg.dataset.name == "cv_arabic":
-        from dataset.load_cv_arabic import cv_arabic_dataset_dict
-        dataset = cv_arabic_dataset_dict["test"]
-
-    dataloader = DataLoader(dataset, batch_size=1)
-
-    need_resample = dataset[0]["audio"]["sampling_rate"] != processor.feature_extractor.sampling_rate
-    if need_resample:
-        print("Resampling is required")
-        resampler = Resample(dataset[0]["audio"]["sampling_rate"], processor.feature_extractor.sampling_rate, dtype=torch.float64)
-    else:
-        print("Resampling is not required")
+    eval_cfg = AppConfig(**hydra_conf)
     
-    WER_ERRORS = []
+    assert eval_cfg.training.resume_from_checkpoint, "Checkpoint path is required for evaluation"
+    
+    model = AudioLLMModel(eval_cfg)
+
+    load_checkpoint(
+        [model.projector], None, None,
+        checkpoint_path=eval_cfg.training.resume_checkpoint_path,
+        logger=logger,
+        load_lr_from_checkpoint=False
+    )
 
     wandb.init(
         entity="borkeren",
-        project="multimodal-alignment",
-        name=f"test-model-{cfg.model.third_party_model_id.split("/", maxsplit=1)[-1]}-{cfg.dataset.name}-{datetime.now()}",
-        config=dict(cfg)
+        project="benchmarks",
+        name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
+            if eval_cfg.wandb.run_name == "default"
+            else eval_cfg.wandb.run_name,
+        config=dict(eval_cfg)
     )
 
-    for idx, batch in enumerate(dataloader):
-        audio = batch["audio"]
-        preprocessed_audio = resampler(audio["array"][0].unsqueeze(0)).squeeze(0) if need_resample else audio["array"][0]
-        input_features = processor(preprocessed_audio, sampling_rate=processor.feature_extractor.sampling_rate, return_tensors="pt").input_features
-        reference = processor.tokenizer._normalize(batch['text'][0])
-        with torch.no_grad():
-            predicted_ids = model.generate(input_features.to("cuda"))[0]
-        transcription = processor.decode(predicted_ids)
-        prediction = processor.tokenizer._normalize(transcription)
-        output = jiwer.compute_measures(reference, prediction)
-        WER_ERRORS.append(output["wer"])
-        if idx%100 == 0:
-            logger.info(f"Iter: {idx} | WER: {output["wer"]:.2f}")
-            logger.info(f"Expected: {reference}")
-            logger.info(f"predicted: {prediction}")
-            wandb.log({"WER": output["wer"]})
-        
-    logger.info(f"Average WER: {sum(WER_ERRORS) / len(WER_ERRORS)}")
-    wandb.log({"Average WER": sum(WER_ERRORS) / len(WER_ERRORS)})
-    
+    if ("w2v-bert" in eval_cfg.model.encoder_model_name):
+        from transformers import AutoFeatureExtractor
+        processor = AutoFeatureExtractor.from_pretrained(eval_cfg.model.encoder_model_name, padding_value=0.0)
+    else:
+        try:
+            processor = AutoProcessor.from_pretrained(eval_cfg.model.encoder_model_name)
+        except Exception:
+            from transformers import AutoFeatureExtractor
+            processor = AutoFeatureExtractor.from_pretrained(eval_cfg.model.encoder_model_name)
+
+    test_dataset = AudioChatDataset(
+        lm_model=eval_cfg.model.lm_model_name,
+        dataset=eval_cfg.dataset.name,
+        split=eval_cfg.dataset.test_split,
+        tokenizer=model.tokenizer,
+        processor=processor,
+        T=eval_cfg.model.token_length,
+        config=eval_cfg,
+    )
+
+    wer, cer, corrected_wer_list = run_evaluation(
+        model=model, 
+        test_dataset=test_dataset, 
+        tokenizer=model.tokenizer, 
+        logger=logger, 
+        n_samples=None, 
+        config=eval_cfg,
+        batch_size=eval_cfg.training.batch_size,
+    )
+
+    logger.info(
+        f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
+    )
+
+    wandb.log({
+        "eval/epoch_wer": wer,
+        "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
+        "eval/epoch_cer": cer
+    })
 
 if __name__ == "__main__":
     main()

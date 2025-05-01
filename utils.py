@@ -6,10 +6,14 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
+from dataset.audio_dataset import AudioChatDataset
 import jiwer
 import wandb
 from config import AppConfig
 from typing import Tuple, List
+
+danish_number_to_word_dict = {
+"1": "en", "2": "to", "3": "tre", "4": "fire", "5": "fem", "6": "seks", "7": "syv", "8": "otte", "9": "ni", "10": "ti", "11": "elleve", "12": "tolv", "13": "tretten", "14": "fjorten", "15": "femten", "16": "seksten", "17": "sytten", "18": "atten", "19": "nitten", "20": "tyve"}
 
 def save_to_temp_mp3(waveform: torch.Tensor, sample_rate: int):
     # Create a temporary file with .mp3 suffix, not deleted automatically
@@ -217,7 +221,7 @@ def calculate_metrics(hypotheses: List[str], references: List[str]) -> Tuple[flo
 
 def run_evaluation(
     model: torch.nn.Module,
-    test_dataset: torch.utils.data.Dataset,
+    test_dataset: AudioChatDataset,
     tokenizer,
     logger: logging.Logger,
     n_samples: int,
@@ -270,7 +274,7 @@ def run_evaluation(
         generated_texts, ground_truths = generate_batch(
             model, batch, model_name, tokenizer
         )
-        
+
         # handle partial last batch if needed
         remaining_samples = n_samples - samples_processed
         if remaining_samples < len(generated_texts):
