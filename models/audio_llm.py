@@ -102,7 +102,7 @@ class AudioLLMModel(nn.Module):
         ) if self.config.model.load_in_4bit else None
 
         # initialize language model with flash attention and liger kernels for memory efficiency
-        lm = transformers.AutoModelForCausalLM.from_pretrained(
+        lm = AutoLigerKernelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
