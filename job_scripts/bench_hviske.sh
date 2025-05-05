@@ -7,7 +7,7 @@
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 00:30
+#BSUB -W 06:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
@@ -25,6 +25,6 @@ nvidia-smi
 module swap python3/3.12.7
 module swap cuda/12.8.0
 
-cd /work3/s224233/shared/multimodal-alignment
+cd ~/multimodal-alignment
 source .venv/bin/activate
-python benchmark/hviske.py
+python hviske.py

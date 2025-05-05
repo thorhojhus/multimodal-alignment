@@ -60,7 +60,7 @@ test_dataset = CoralTestDataset(test_data)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=64,
+    batch_size=32,
     num_workers=16,
     pin_memory=True,
     prefetch_factor=2,
@@ -103,7 +103,7 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
             input_features,
             attention_mask=attention_mask,
             forced_decoder_ids=forced_decoder_ids,
-            num_beams=1,
+            num_beams=5,
             length_penalty=1.0,
             use_cache=True
         )
