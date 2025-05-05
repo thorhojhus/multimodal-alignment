@@ -55,6 +55,7 @@ class TrainingConfig(BaseModel):
     do_phonemize: bool
 
 class EvalConfig(BaseModel):
+    enabled: bool
     n_samples: int
     batch_size: Optional[int]
 

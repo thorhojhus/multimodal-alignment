@@ -42,6 +42,7 @@ training:
   do_phonemize: false
 
 eval:
+  enabled: true
   n_samples: 128
   batch_size: null
 
