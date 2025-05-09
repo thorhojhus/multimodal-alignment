@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import torch
 import torchaudio
@@ -664,6 +665,48 @@ def apply_pitch_shift_augmentation(
 
     return item
 
+
+def filter_difficult_examples(example, text_column="text"):
+    text = example["text"]
+    
+    # 1. Filter out spelled out uppercase letters (D A N S E H A L L E R)
+    if re.search(r'(^|\s)[A-Z](\s+[A-Z]){2,}($|\s|[,.!?])', text):
+        return False
+    
+    # 2. Filter out written numbers
+    lower_text = text.lower()
+    danish_number_words = [
+        "nul", "en", "et", "to", "tre", "fire", "fem", "seks", "syv", "otte", "ni",
+        "ti", "elleve", "tolv", "tretten", "fjorten", "femten", "seksten", "sytten", 
+        "atten", "nitten", "tyve", "tredive", "fyrre", "halvtreds", "tres", 
+        "halvfjerds", "firs", "halvfems", "hundrede", "tusind", "million", "milliard"
+    ]
+    
+    # Add compound numbers (fireogtres, etc.)
+    for digit in ["en", "to", "tre", "fire", "fem", "seks", "syv", "otte", "ni"]:
+        for ten in ["tyve", "tredive", "fyrre", "halvtreds", "tres", "halvfjerds", "firs", "halvfems"]:
+            danish_number_words.append(f"{digit}og{ten}")
+    
+    words = re.findall(r'\b\w+\b', lower_text)
+    consecutive_number_words = 0
+    for word in words:
+        if word in danish_number_words:
+            consecutive_number_words += 1
+            if consecutive_number_words >= 3:
+                return False
+        else:
+            consecutive_number_words = 0
+    
+    # 3. Filter out sentences with backslashes
+    if "\\" in text:
+        return False
+    
+    # 4. Filter out sentences with repeated adjacent words
+    for i in range(len(words) - 1):
+        if words[i] == words[i+1] and len(words[i]) > 1:  # Ignore single letters
+            return False
+    
+    return True  # Keep this example
 
 if __name__ == "__main__":
     import transformers
