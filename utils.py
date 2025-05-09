@@ -151,7 +151,8 @@ def generate_batch(
     model_name: str,
     tokenizer,
     max_new_tokens: int = 100,
-    return_hidden_states: bool = False
+    return_hidden_states: bool = False,
+    do_sample: bool = False
 ) -> Tuple[List[str], List[str]]:
     user_prompts, user_prompt_masks = get_user_prompts_batch(batch["input_ids"], model_name, tokenizer)
     ground_truths = get_ground_truths_batch(batch["input_ids"], model_name, tokenizer)
@@ -187,7 +188,7 @@ def generate_batch(
             insertion_indices=insertion_indices,
             attention_mask=user_prompt_masks,
             max_new_tokens=max_new_tokens,
-            do_sample=False,
+            do_sample=do_sample,
             return_dict_in_generate=return_hidden_states,
             output_hidden_states=return_hidden_states,
         )

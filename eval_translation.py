@@ -9,13 +9,12 @@ from datasets import load_dataset
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from collections import defaultdict
-from sacrebleu.metrics import BLEU
-import nltk
+from sacrebleu.metrics import BLEU, CHRF, TER
 import hydra
 from omegaconf import DictConfig
-from nltk.translate.meteor_score import meteor_score
-from rouge_score import rouge_scorer
 from transformers import BatchFeature
+
+from comet import download_model, load_from_checkpoint
 
 # Import the necessary components from the existing codebase
 from config import AppConfig
@@ -31,34 +30,34 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def load_fleurs_data():
     """Load and prepare FLEURS dataset for translation evaluation."""
     # Load the Danish and English FLEURS datasets
-    fleurs_da = load_dataset("google/fleurs", "da_dk", split="test")
-    fleurs_en = load_dataset("google/fleurs", "en_us", split="test")
+    fleurs_source = load_dataset("google/fleurs", "da_dk", split="test")
+    #fleurs_source = load_dataset("google/fleurs", "da_dk", split="test")
+    fleurs_target = load_dataset("google/fleurs", "en_us", split="test")
     
     # Group by ID to handle multiple speakers
-    da_by_id = defaultdict(list)
-    en_by_id = defaultdict(list)
+    source_by_id = defaultdict(list)
+    target_by_id = defaultdict(list)
     
     # Process Danish dataset
-    for i, item in enumerate(fleurs_da):
-        da_by_id[item['id']].append(i)
+    for i, item in enumerate(fleurs_source):
+        source_by_id[item['id']].append(i)
     
     # Process English dataset
-    for i, item in enumerate(fleurs_en):
-        en_by_id[item['id']].append(i)
+    for i, item in enumerate(fleurs_target):
+        target_by_id[item['id']].append(i)
     
     # Find common IDs
-    common_ids = set(da_by_id.keys()).intersection(set(en_by_id.keys()))
+    common_ids = set(source_by_id.keys()).intersection(set(target_by_id.keys()))
     logger.info(f"Found {len(common_ids)} common IDs between Danish and English datasets")
     
-    return fleurs_da, fleurs_en, da_by_id, en_by_id, common_ids
+    return fleurs_source, fleurs_target, source_by_id, target_by_id, common_ids
 
 def _format_translation_chat(tokenizer, model_name):
     """Create a translation prompt template based on model type."""
     if "gemma-2" in model_name.lower() or "gemma-3" in model_name.lower():
         # For Gemma models
         return [
-            {"role": "user", "content": f"Translate the following audio to English: <|audio|>"},
-            {"role": "assistant", "content": ""}
+            {"role": "user", "content": f"You are a helpful translator that provides accurate translations. Translate the audio accurately and provide only the translation. Remember to output in English. \n\nTranslate the following audio from Danish to English:\nDanish audio: <|audio|> \nEnglish translation: "},
         ]
     else:
         # For other models (default)
@@ -105,8 +104,10 @@ def process_audio_features(audio_array, audio_sampling_rate, processor):
             })
     
     elif "SeamlessM4TFeatureExtractor" in processor.__class__.__name__:
-        if (len(audio_array) / target_sampling_rate) > 16:  # truncate audio to 16 seconds
-            audio_array = audio_array[:target_sampling_rate*16]
+        # Dont filter when testing only for training
+        # if (len(audio_array) / target_sampling_rate) > 16:  # truncate audio to 16 seconds
+        #     audio_array = audio_array[:target_sampling_rate*16]
+        #     pass
         return processor(
             audio_array,
             sampling_rate=target_sampling_rate,
@@ -175,44 +176,50 @@ def prepare_translation_samples(model, dataset, indices, processor, tokenizer):
     
     return samples
 
-def evaluate_translations(hypotheses, references):
-    """Evaluate translations using spBLEU, METEOR, and ROUGE."""
-    # Calculate spBLEU
+def evaluate_translations(hypotheses, references, sources=None):
+    """Evaluate translations using sacrebleu and COMET (if available)."""
+    # Calculate BLEU score with sacrebleu
     bleu = BLEU()
-    bleu_score = bleu.corpus_score(hypotheses, [references]).score
+    bleu_score = bleu.corpus_score(hypotheses, [references])
     
-    # Initialize NLTK for METEOR
-    try:
-        nltk.data.find('wordnet')
-    except LookupError:
-        nltk.download('wordnet')
+    # Calculate CHRF score
+    chrf = CHRF()
+    chrf_score = chrf.corpus_score(hypotheses, [references])
     
-    # Calculate METEOR scores
-    meteor_scores = []
-    for hyp, ref in zip(hypotheses, references):
-        score = meteor_score([ref.split()], hyp.split())
-        meteor_scores.append(score)
-    avg_meteor = sum(meteor_scores) / len(meteor_scores)
+    # Calculate TER score
+    ter = TER()
+    ter_score = ter.corpus_score(hypotheses, [references])
     
-    # Calculate ROUGE scores
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-    rouge_scores = {'rouge1': 0, 'rouge2': 0, 'rougeL': 0}
-    
-    for hyp, ref in zip(hypotheses, references):
-        scores = scorer.score(ref, hyp)
-        rouge_scores['rouge1'] += scores['rouge1'].fmeasure
-        rouge_scores['rouge2'] += scores['rouge2'].fmeasure
-        rouge_scores['rougeL'] += scores['rougeL'].fmeasure
-    
-    rouge_scores = {k: v / len(hypotheses) for k, v in rouge_scores.items()}
-    
-    return {
-        "spBLEU": bleu_score,
-        "METEOR": avg_meteor,
-        "ROUGE-1": rouge_scores['rouge1'],
-        "ROUGE-2": rouge_scores['rouge2'],
-        "ROUGE-L": rouge_scores['rougeL']
+    results = {
+        "BLEU": bleu_score.score,
+        "CHRF": chrf_score.score,
+        "TER": ter_score.score,
     }
+    
+    # Use COMET if available and source texts are provided
+    # Initialize COMET model
+    model_path = download_model("Unbabel/wmt22-comet-da")
+    comet_model = load_from_checkpoint(model_path)
+    
+    # Prepare data for COMET
+    data = [
+        {
+            "src": src,
+            "mt": hyp,
+            "ref": ref
+        }
+        for src, hyp, ref in zip(sources, hypotheses, references)
+    ]
+    
+    # Get COMET scores
+    comet_scores = comet_model.predict(data, batch_size=8, gpus=1)
+            
+    # Extract the score
+    results["COMET"] = comet_scores["system_score"]
+
+
+    
+    return results
 
 @hydra.main(version_base="1.2", config_path="configs", config_name="config_eval_wav2vec")
 def main(hydra_conf: DictConfig):
@@ -265,7 +272,7 @@ def main(hydra_conf: DictConfig):
             processor = AutoFeatureExtractor.from_pretrained(app_config.model.encoder_model_name)
     
     # Load FLEURS datasets
-    fleurs_da, fleurs_en, da_by_id, en_by_id, common_ids = load_fleurs_data()
+    fleurs_da, fleurs_en, source_by_id, target_by_id, common_ids = load_fleurs_data()
     
     # Translate Danish to English
     all_translations = []
@@ -280,14 +287,14 @@ def main(hydra_conf: DictConfig):
         
         for id in batch_ids:
             # Get Danish samples for this ID
-            da_indices = da_by_id[id]
+            source_indices = source_by_id[id]
             
             # Get English reference for this ID
-            en_idx = en_by_id[id][0]  # Use first one as reference
-            reference = fleurs_en[en_idx]["transcription"]
+            target_idx = target_by_id[id][0]  # Use first one as reference
+            reference = fleurs_en[target_idx]["raw_transcription"]
             
             # Prepare translation samples
-            samples = prepare_translation_samples(model, fleurs_da, da_indices, processor, model.tokenizer)
+            samples = prepare_translation_samples(model, fleurs_da, source_indices, processor, model.tokenizer)
             
             # Process each sample (one by one for stability)
             for i, sample in enumerate(samples):
@@ -298,20 +305,20 @@ def main(hydra_conf: DictConfig):
                 with torch.inference_mode():
                     generated_texts, _ = generate_batch(
                         model, batch, app_config.model.lm_model_name, model.tokenizer,
-                        max_new_tokens=100
+                        max_new_tokens=100, do_sample=True
                     )
                 
                 # Add translation and reference
                 translation = generated_texts[0]
                 all_translations.append(translation)
                 all_references.append(reference)
-                all_source_texts.append(fleurs_da[da_indices[i]]["transcription"])
+                all_source_texts.append(fleurs_da[source_indices[i]]["raw_transcription"])
                 # Clean up any extra tokens or formatting that might be present
                 translation = translation.strip()
                 
                 # Log sample to console for monitoring
                 logger.info(f"Sample {len(all_translations)}:")
-                logger.info(f"Source (Danish): {fleurs_da[da_indices[i]]['transcription']}")
+                logger.info(f"Source (Danish): {fleurs_da[source_indices[i]]['raw_transcription']}")
                 logger.info(f"Reference (English): {reference}")
                 logger.info(f"Translation: {translation}")
                 logger.info("-" * 50)
@@ -323,15 +330,15 @@ def main(hydra_conf: DictConfig):
     assert len(all_translations) == len(all_references), "Number of translations and references must match"
     
     # Calculate and print metrics
-    metrics = evaluate_translations(all_translations, all_references)
+    metrics = evaluate_translations(all_translations, all_references, all_source_texts)
     
     logger.info("\nTranslation Evaluation Results:")
     logger.info(f"Number of samples evaluated: {len(all_translations)}")
-    logger.info(f"spBLEU score: {metrics['spBLEU']:.4f}")
-    logger.info(f"METEOR score: {metrics['METEOR']:.4f}")
-    logger.info(f"ROUGE-1 score: {metrics['ROUGE-1']:.4f}")
-    logger.info(f"ROUGE-2 score: {metrics['ROUGE-2']:.4f}")
-    logger.info(f"ROUGE-L score: {metrics['ROUGE-L']:.4f}")
+    logger.info(f"BLEU score: {metrics['BLEU']:.4f}")
+    logger.info(f"CHRF score: {metrics['CHRF']:.4f}")
+    logger.info(f"TER score: {metrics['TER']:.4f}")
+    if "COMET" in metrics:
+        logger.info(f"COMET score: {metrics['COMET']:.4f}")
     
     # Save results to file
     output_dir = Path("translation_results")
@@ -343,11 +350,12 @@ def main(hydra_conf: DictConfig):
         f.write(f"Number of samples: {len(all_translations)}\n\n")
         
         f.write("Metrics:\n")
-        f.write(f"spBLEU score: {metrics['spBLEU']:.4f}\n")
-        f.write(f"METEOR score: {metrics['METEOR']:.4f}\n")
-        f.write(f"ROUGE-1 score: {metrics['ROUGE-1']:.4f}\n")
-        f.write(f"ROUGE-2 score: {metrics['ROUGE-2']:.4f}\n")
-        f.write(f"ROUGE-L score: {metrics['ROUGE-L']:.4f}\n\n")
+        f.write(f"BLEU score: {metrics['BLEU']:.4f}\n")
+        f.write(f"CHRF score: {metrics['CHRF']:.4f}\n")
+        f.write(f"TER score: {metrics['TER']:.4f}\n")
+        if "COMET" in metrics:
+            f.write(f"COMET score: {metrics['COMET']:.4f}\n")
+        f.write("\n")
         
         f.write("Sample Translations:\n")
         for i in range(min(10, len(all_translations))):  # Save first 10 examples
