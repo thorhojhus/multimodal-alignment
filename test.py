@@ -11,7 +11,7 @@ from models.audio_llm import AudioLLMModel
 from omegaconf import DictConfig
 from utils import (
     load_checkpoint,
-    run_evaluation
+    run_evaluation_dialects
 )
 
 # set up a module-level logger
@@ -42,14 +42,14 @@ def main(hydra_conf: DictConfig):
         load_lr_from_checkpoint=False
     )
 
-    wandb.init(
-        entity="borkeren",
-        project="benchmarks",
-        name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
-            if eval_cfg.wandb.run_name == "default"
-            else eval_cfg.wandb.run_name,
-        config=dict(eval_cfg)
-    )
+    # wandb.init(
+    #    entity="borkeren",
+    #    project="benchmarks",
+    #    name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
+    #        if eval_cfg.wandb.run_name == "default"
+    #        else eval_cfg.wandb.run_name,
+    #    config=dict(eval_cfg)
+    #)
 
     if ("w2v-bert" in eval_cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
@@ -71,25 +71,21 @@ def main(hydra_conf: DictConfig):
         config=eval_cfg,
     )
 
-    wer, cer, corrected_wer_list = run_evaluation(
+    dialect_wer_dict, dialect_cer_dict = run_evaluation_dialects(
         model=model, 
         test_dataset=test_dataset, 
         tokenizer=model.tokenizer, 
-        logger=logger, 
-        n_samples=None, 
+        logger=logger,
         config=eval_cfg,
         batch_size=eval_cfg.training.batch_size,
+        num_batches=100,
     )
 
-    logger.info(
-        f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
-    )
-
-    wandb.log({
-        "eval/epoch_wer": wer,
-        "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-        "eval/epoch_cer": cer
-    })
+    #wandb.log({
+    #    "eval/epoch_wer": wer,
+    #    "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
+    #    "eval/epoch_cer": cer
+    #})
 
 if __name__ == "__main__":
     main()
