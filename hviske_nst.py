@@ -20,14 +20,106 @@ torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.enabled = True
 
+
+def normalize_numbers_danish(text):
+    """
+    Convert Danish number words to digits, handling complex number phrases.
+    """
+    # Replace common composite forms first
+    text = text.replace("og ", " ")  # Remove connecting "og" between numbers
+    
+    # Define number mappings
+    basic_numbers = {
+        "nul": 0, "en": 1, "et": 1, "to": 2, "tre": 3, "fire": 4, "fem": 5,
+        "seks": 6, "syv": 7, "otte": 8, "ni": 9, "ti": 10, "elleve": 11,
+        "tolv": 12, "tretten": 13, "fjorten": 14, "femten": 15, "seksten": 16,
+        "sytten": 17, "atten": 18, "nitten": 19
+    }
+    
+    tens = {
+        "tyve": 20, "tredive": 30, "fyrre": 40, "halvtreds": 50,
+        "tres": 60, "halvfjerds": 70, "firs": 80, "halvfems": 90
+    }
+    
+    multipliers = {
+        "hundrede": 100, "tusind": 1000, "million": 1000000, "millioner": 1000000,
+        "milliard": 1000000000, "milliarder": 1000000000
+    }
+    
+    # Process text through multiple passes
+    words = text.split()
+    result = []
+    i = 0
+    
+    while i < len(words):
+        current_word = words[i]
+        
+        # Check for compound numbers (e.g., "treogtyve")
+        if "og" in current_word and len(current_word) > 2:
+            parts = current_word.split("og")
+            if len(parts) == 2 and parts[0] in basic_numbers and parts[1] in tens:
+                result.append(str(basic_numbers[parts[0]] + tens[parts[1]]))
+                i += 1
+                continue
+        
+        # Process number phrases
+        if current_word in basic_numbers:
+            value = basic_numbers[current_word]
+            
+            # Look ahead for multipliers
+            if i + 1 < len(words) and words[i+1] in multipliers:
+                value *= multipliers[words[i+1]]
+                i += 2
+                
+                # Check if we need to add more numbers
+                if i < len(words):
+                    next_val = 0
+                    
+                    # Try to process the rest as a number
+                    rest_text = " ".join(words[i:])
+                    rest_result = normalize_numbers_danish(rest_text)
+                    if any(c.isdigit() for c in rest_result):
+                        # Extract number from result
+                        num_str = ''.join(c for c in rest_result if c.isdigit())
+                        if num_str:
+                            next_val = int(num_str)
+                    
+                    result.append(str(value + next_val))
+                    break
+                else:
+                    result.append(str(value))
+            else:
+                result.append(str(value))
+                i += 1
+                
+        elif current_word in tens:
+            result.append(str(tens[current_word]))
+            i += 1
+            
+        elif current_word in multipliers:
+            # Handle standalone multipliers (rare but possible)
+            result.append(str(multipliers[current_word]))
+            i += 1
+            
+        else:
+            # Not a number word, keep as is
+            result.append(current_word)
+            i += 1
+    
+    # Join and return
+    return " ".join(result)
+
 def normalize_text(text):
     """
     Normalize text to lowercase a-z, æ, ø, å, 0-9, and spaces only.
-    Remove all other characters.
+    Convert number words to digits and remove all other characters.
     """
     # Convert to lowercase
     text = text.lower()
     text = text.strip()
+    
+    # Convert number words to digits
+    text = normalize_numbers_danish(text)
     
     # Keep only a-z, æ, ø, å, 0-9, and spaces
     text = re.sub(r'[^a-zæøå0-9 ]', '', text)
