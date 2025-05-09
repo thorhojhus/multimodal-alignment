@@ -14,15 +14,14 @@ def setup_vllm_model():
     """Set up the vLLM model with Gemma 3 4B-it"""
     print("Loading Gemma 3 model with vLLM...")
     
-    # vLLM optimizes inference with continuous batching and PagedAttention
     model = LLM(
-        model="google/gemma-3-4b-it",
+        model="google/gemma-3-4b-pt",
         enable_chunked_prefill=True,
-        max_model_len=512,
-        max_seq_len_to_capture=512,
-        tensor_parallel_size=1,  # Increase if multiple GPUs available3
+        max_model_len=256,
+        max_seq_len_to_capture=256,
+        tensor_parallel_size=1,
         dtype="bfloat16",
-        gpu_memory_utilization=0.4,
+        gpu_memory_utilization=0.95,
     )
     
     return model
@@ -53,7 +52,8 @@ def process_dataset_batch(
 def generate_and_save_continuations(
     dataset_dict: DatasetDict,
     output_dir: str,
-    batch_size: int = 32
+    batch_size: int = 256,
+    splits_to_process: List[str] = ["test", "train"]  # Only process test and train splits
 ):
     """Generate continuations for LibriSpeech dataset splits and save to JSON"""
     
@@ -65,15 +65,16 @@ def generate_and_save_continuations(
     
     # Set optimal sampling parameters for Gemma 3
     sampling_params = SamplingParams(
-        temperature=0.7,      # Good balance of creativity and coherence
-        top_p=0.9,            # Allow diverse but coherent outputs
-        top_k=40,             # Limit to likely tokens
-        repetition_penalty=1.1, # Slight penalty to avoid repetition
-        max_tokens=50,        # Limit continuation length
+        max_tokens=64,
     )
     
     # Process each split
     for split_name, dataset in dataset_dict.items():
+        # Skip splits that are not test or train
+        if split_name not in splits_to_process:
+            print(f"Skipping {split_name} split (not in {splits_to_process})")
+            continue
+            
         print(f"Processing {split_name} with {len(dataset)} examples...")
         
         # Check if file already exists to support resuming
@@ -150,11 +151,15 @@ def add_continuations_to_dataset(dataset, continuations_file):
 def main():
     from dataset.load_librispeech import librispeech_dataset_dict
     
-    # Generate and save continuations
+    # Generate and save continuations (only for test and train splits)
     continuations_dir = "./dataset/librispeech_continuations"
-    generate_and_save_continuations(librispeech_dataset_dict, continuations_dir)
+    generate_and_save_continuations(
+        librispeech_dataset_dict, 
+        continuations_dir,
+        splits_to_process=["test", "train"]  # Explicitly specify splits
+    )
     
-    print("Finished generating all continuations!")
+    print("Finished generating continuations for test and train splits!")
 
 if __name__ == "__main__":
     main()
