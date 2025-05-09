@@ -1,5 +1,9 @@
+wandb
+speecht5
+notebooks
 outputs
 .vscode
+*.wav
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

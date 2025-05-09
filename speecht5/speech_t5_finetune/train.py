@@ -79,11 +79,11 @@ data_collator = TTSDataCollatorWithPadding(processor=processor)
 
 training_args = Seq2SeqTrainingArguments(
     output_dir=output_dir,
-    per_device_train_batch_size=16,
-    gradient_accumulation_steps=2,
+    per_device_train_batch_size=32,
+    gradient_accumulation_steps=1,
     learning_rate=1e-5,
     warmup_steps=500,
-    num_train_epochs=20,
+    num_train_epochs=5,
     gradient_checkpointing=False,
     bf16=True,
     tf32=True,
@@ -99,6 +99,8 @@ training_args = Seq2SeqTrainingArguments(
     push_to_hub=False,
     dataloader_num_workers=24,
     dataloader_pin_memory=True,
+    remove_unused_columns=True,
+    torch_compile=True,
 )
 
 
@@ -108,7 +110,7 @@ trainer = Seq2SeqTrainer(
     train_dataset=dataset["train"],
     eval_dataset=dataset["test"],
     data_collator=data_collator,
-    tokenizer=processor,
+    processing_class=processor,
 )
 
 trainer.train()
