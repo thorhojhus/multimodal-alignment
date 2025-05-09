@@ -182,6 +182,9 @@ class AudioChatDataset(torch.utils.data.Dataset):
             elif dataset_name == "melatech":
                 from dataset.load_melatech import melatech_dataset_dict
                 return melatech_dataset_dict[split].cast_column("audio", Audio(sampling_rate=16000))
+            elif dataset_name == "nst-da":
+                from dataset.nst_da import nst_dataset_dict
+                return nst_dataset_dict[split].cast_column("audio", Audio(sampling_rate=16000))
             else:
                 print(f"Unsupported dataset: {dataset_name}")
                 return None
@@ -299,7 +302,6 @@ class AudioChatDataset(torch.utils.data.Dataset):
         return ipa_text
 
 
-
     def _format_chat(self, example, audio):
         
         prompt = "Transcribe the following text in lower case:"
@@ -372,6 +374,8 @@ class AudioChatDataset(torch.utils.data.Dataset):
         alt_labels = torch.full(tokenized_alt.size(), fill_value=-100)
         alt_labels[-len(assistant_response):] = assistant_response
         
+        maybe_dialect = {"dialect": example["dialect"]} if "dialect" in example.keys() else {}
+
         return {
             "input_ids": tokenized,
             "audio_features": audio_features,
@@ -380,7 +384,7 @@ class AudioChatDataset(torch.utils.data.Dataset):
             "alt_labels": alt_labels,
             "text_ids": torch.tensor(self.tokenizer.encode(text)),
             "raw_audio": audio_array,
-        }
+        } | maybe_dialect
 
 
 def get_audio_positions(input_ids: Tensor, audio_token_id: int) -> list[Tensor]:
@@ -570,7 +574,8 @@ def collate_fn(batch, tokenizer, T, include_raw_audio: bool = False):
         "alt_labels": alt_labels,
         "alt_attention_mask": alt_attention_mask,
         "text_ids": text_ids,
-        "raw_audio": [item["raw_audio"] for item in batch] if include_raw_audio else None
+        "raw_audio": [item["raw_audio"] for item in batch] if include_raw_audio else None,
+        "dialect": [item["dialect"] for item in batch]
     } 
 
 def add_gaussian_noise(
