@@ -47,7 +47,7 @@ test_dataset = NSTTestDataset(test_data)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=32,
+    batch_size=16,
     num_workers=8,
     pin_memory=True,
     prefetch_factor=2,
