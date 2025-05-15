@@ -3,7 +3,7 @@
 #BSUB -q gpua100
 #BSUB -R "select[gpu80gb]"
 ### Name
-#BSUB -J mm_train
+#BSUB -J job_20
 ### Num cores
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
