@@ -3,7 +3,10 @@ outputs
 .*
 weights/
 tts-wavs/
-
+wandb/
+speecht5/
+notebooks/
+*.wav
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
