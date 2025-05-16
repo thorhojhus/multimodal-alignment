@@ -146,7 +146,7 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
     if not trainable_params:
         raise ValueError("No trainable parameters found. Check model configuration.")
 
-    optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
+    optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.05)
     
     print_parameter_count(model, logger)
 
