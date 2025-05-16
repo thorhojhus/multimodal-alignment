@@ -135,7 +135,9 @@ class AudioLLMModel(nn.Module):
             return LinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
         elif type == "transformer":
             from models.transformer_adapter import SpeechAdapter
-            return torch.compile(SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim).to("cuda", torch.bfloat16), dynamic=True)
+            adapter = SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim).to("cuda", torch.bfloat16)
+            adapter.gradient_checkpointing_enable()
+            return torch.compile(adapter, dynamic=True)
         elif type == "wav2vecbert":
             from transformers.models.wav2vec2_bert.modeling_wav2vec2_bert import Wav2Vec2BertAdapter
             from transformers.models.wav2vec2_bert import Wav2Vec2BertConfig

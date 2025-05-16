@@ -132,7 +132,7 @@ class SpeechAdapter(nn.Module):
         hidden_states = self.conv(hidden_states)
         hidden_states = hidden_states.transpose(1, 2)
         
-        self.transformer_layer(hidden_states)
+        hidden_states = self.transformer_layer(hidden_states)
             
         hidden_states = self.linear(hidden_states)
         hidden_states = self.ln_out(hidden_states)
