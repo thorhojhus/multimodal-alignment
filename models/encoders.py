@@ -56,11 +56,16 @@ class EncoderWrapper(AutoModel):
                     device_map=None
                 ).to("cuda")
             case EncoderEnum.WAV2VECBERT:
-                encoder = torch.compile(Wav2Vec2BertModel.from_pretrained(
+                # encoder = torch.compile(Wav2Vec2BertModel.from_pretrained(
+                #     self.encoder_type.value,
+                #     torch_dtype=torch.bfloat16,
+                #     device_map=None
+                # ).to("cuda"), dynamic=True)
+                encoder = Wav2Vec2BertModel.from_pretrained(
                     self.encoder_type.value,
                     torch_dtype=torch.bfloat16,
                     device_map=None
-                ).to("cuda"), dynamic=True)
+                ).to("cuda")
             case EncoderEnum.MIMI:
                 encoder = MimiModel.from_pretrained(
                     self.encoder_type.value,
