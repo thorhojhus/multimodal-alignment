@@ -1,4 +1,5 @@
 import os
+from benchmark.bootstrap import bootstrap_metrics
 
 # Check if the file exists and throw an error if it does
 if os.path.exists("generations/whisper_librispeech.txt"):

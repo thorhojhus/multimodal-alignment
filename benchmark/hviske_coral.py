@@ -6,7 +6,7 @@ from tqdm import tqdm
 import re
 from torch.utils.data import DataLoader, Dataset
 from dataset.load_coral import coral_dataset_dict
-from dataset.audio_dataset import filter_difficult_examples
+from benchmark.bootstrap import bootstrap_metrics
 import numpy as np
 
 # Set various CUDA and cudnn settings
@@ -165,17 +165,14 @@ def worker_init_fn(worker_id):
 
 test_dataset = coral_dataset_dict["test"]
 print(test_dataset)
-test_dataset = test_dataset.filter(filter_difficult_examples)
-
-print(test_dataset)
 test_dataset = CoralDatasetWrapper(test_dataset)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=32,
-    num_workers=8,
+    batch_size=16,
+    num_workers=4,
     pin_memory=True,
-    prefetch_factor=4,
+    prefetch_factor=2,
     collate_fn=collate_fn,
     worker_init_fn=worker_init_fn,
 )
@@ -225,9 +222,6 @@ for num_batches, (inputs, batch_refs) in enumerate(tqdm(loader, desc="Processing
     normalized_refs = [normalize_text(ref) for ref in batch_refs]
     
     for pred, ref, norm_pred, norm_ref in zip(predictions, batch_refs, normalized_predictions, normalized_refs):
-        print(f"Prediction: \t{norm_pred}")
-        print(f"Reference: \t{norm_ref}")
-
         # Calculate metrics using normalized text
         single_wer = wer(norm_ref, norm_pred)
         single_cer = cer(norm_ref, norm_pred)
@@ -241,5 +235,10 @@ for num_batches, (inputs, batch_refs) in enumerate(tqdm(loader, desc="Processing
         torch.cuda.empty_cache()
 
 
-print(f"Final WER: {np.mean(wers):.4f} +- {np.std(wers):.4f}")
-print(f"Final CER: {np.mean(cers):.4f} +- {np.std(cers):.4f}")
+# Final metricsw
+wer_dict = bootstrap_metrics(wers, num_iterations=1000)
+cer_dict = bootstrap_metrics(cers, num_iterations=1000)
+
+print("Final WER / CER:")
+print(f"WER: {wer_dict['mean']:.4f} +- {wer_dict['std']:.4f} | CI: {wer_dict['confidence_interval']}")
+print(f"CER: {cer_dict['mean']:.4f} +- {cer_dict['std']:.4f} | CI: {cer_dict['confidence_interval']}")

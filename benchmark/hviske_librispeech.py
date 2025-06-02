@@ -5,7 +5,7 @@ from tqdm import tqdm
 import re
 from torch.utils.data import DataLoader, Dataset
 from dataset.load_librispeech import librispeech_dataset_dict
-from dataset.audio_dataset import filter_difficult_examples
+from benchmark.bootstrap import bootstrap_metrics
 import numpy as np
 # Set various CUDA and cudnn settings
 torch.set_float32_matmul_precision('medium')
@@ -150,17 +150,14 @@ def collate_fn(batch):
 
 test_dataset = librispeech_dataset_dict["test"]
 print(test_dataset)
-test_dataset = test_dataset.filter(filter_difficult_examples)
-
-print(test_dataset)
 test_dataset = LibrispeechDatasetWrapper(test_dataset)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=32,
-    num_workers=16,
+    batch_size=16,
+    num_workers=8,
     pin_memory=True,
-    prefetch_factor=8,
+    prefetch_factor=4,
     collate_fn=collate_fn,
 )
 
@@ -214,9 +211,6 @@ for num_batches, (inputs, batch_refs) in enumerate(tqdm(loader, desc="Processing
         single_cer = cer(norm_ref, norm_pred)
         wers.append(single_wer)
         cers.append(single_cer)
-    
-    print(f"Prediction: \t{norm_pred}")
-    print(f"Reference: \t{norm_ref}")
 
     # Periodic cache clearing
     if num_batches % 10 == 0:
@@ -226,6 +220,10 @@ for num_batches, (inputs, batch_refs) in enumerate(tqdm(loader, desc="Processing
         torch.cuda.empty_cache()
 
 
+# Final metricsw
+wer_dict = bootstrap_metrics(wers, num_iterations=1000)
+cer_dict = bootstrap_metrics(cers, num_iterations=1000)
+
 print("Final WER / CER:")
-print(f"WER: {np.mean(wers):.4f} +- {np.std(wers):.4f}")
-print(f"CER: {np.mean(cers):.4f} +- {np.std(cers):.4f}")
+print(f"WER: {wer_dict['mean']:.4f} +- {wer_dict['std']:.4f} | CI: {wer_dict['confidence_interval']}")
+print(f"CER: {cer_dict['mean']:.4f} +- {cer_dict['std']:.4f} | CI: {cer_dict['confidence_interval']}")
