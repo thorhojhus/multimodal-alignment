@@ -127,7 +127,7 @@ def normalize_text(text):
     return text
 
 # Use OpenAI's Whisper model
-model_name = "syvai/hviske-v2"
+model_name = "openai/whisper-large-v3"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
 
 class NSTDatasetWrapper(Dataset):

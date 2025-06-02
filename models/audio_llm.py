@@ -144,6 +144,12 @@ class AudioLLMModel(nn.Module):
             return Wav2Vec2BertAdapter(adapter_config).to("cuda", torch.bfloat16)
         elif type == "simple-linear":
             return SimpleLinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "primer":
+            from models.primer_transformer_adapter import PrimerTransformerProjector
+            return PrimerTransformerProjector(encoder_dim=encoder_dim, embed_dim=embed_dim, downsample_factor=self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "transformer-layered":
+            from models.transformer_layered import LayeredTransformerProjector
+            return LayeredTransformerProjector(encoder_dim=encoder_dim, embed_dim=embed_dim, downsample_factor=self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
