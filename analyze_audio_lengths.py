@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from datasets import Audio
@@ -8,8 +7,8 @@ from datasets import Audio
 # Import datasets
 from dataset.load_coral import coral_dataset_dict
 from dataset.load_librispeech import librispeech_dataset_dict
-#from dataset.common_voice_ar import common_voice_ar_dataset_dict
 from dataset.load_melatech import melatech_dataset_dict
+from dataset.nst_da import nst_dataset_dict
 
 def analyze_dataset(dataset, name, split):
     """Analyze audio length statistics for a dataset."""
@@ -107,11 +106,11 @@ def main():
         if stats:
             all_stats.append(stats)
     
-    # # Common Voice Arabic
-    # for split in common_voice_ar_dataset_dict:
-    #     stats = analyze_dataset(common_voice_ar_dataset_dict[split], "cv_arabic", split)
-    #     if stats:
-    #         all_stats.append(stats)
+    # NST Da
+    for split in nst_dataset_dict:
+        stats = analyze_dataset(nst_dataset_dict[split], "NST-Da", split)
+        if stats:
+            all_stats.append(stats)
     
     # Melatech dataset
     for split in melatech_dataset_dict:
