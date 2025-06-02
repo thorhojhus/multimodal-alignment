@@ -53,6 +53,8 @@ class TrainingConfig(BaseModel):
     loss: Literal["ce", "kl_loss", "embed_loss"]
     kl_temp: float
     do_phonemize: bool
+    seed: Optional[int]
+    run_count: Optional[int]
 
 class EvalConfig(BaseModel):
     n_samples: int
