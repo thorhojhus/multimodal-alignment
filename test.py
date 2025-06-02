@@ -41,15 +41,15 @@ def main(hydra_conf: DictConfig):
         logger=logger,
         load_lr_from_checkpoint=False
     )
-
-    wandb.init(
-        entity="borkeren",
-        project="benchmarks",
-        name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
-            if eval_cfg.wandb.run_name == "default"
-            else eval_cfg.wandb.run_name,
-        config=dict(eval_cfg)
-    )
+    if eval_cfg.wandb.enabled:
+        wandb.init(
+            entity="borkeren",
+            project="benchmarks",
+            name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
+                if eval_cfg.wandb.run_name == "default"
+                else eval_cfg.wandb.run_name,
+            config=dict(eval_cfg)
+        )
 
     if ("w2v-bert" in eval_cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
@@ -85,11 +85,12 @@ def main(hydra_conf: DictConfig):
         f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
     )
 
-    wandb.log({
-        "eval/epoch_wer": wer,
-        "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-        "eval/epoch_cer": cer
-    })
+    if eval_cfg.wandb.enabled:
+        wandb.log({
+            "eval/epoch_wer": wer,
+            "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
+            "eval/epoch_cer": cer
+        })
 
 if __name__ == "__main__":
     main()
