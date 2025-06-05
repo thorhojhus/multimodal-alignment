@@ -14,11 +14,7 @@ from datasets import Audio
 
 # Set various CUDA and cudnn settings
 torch.set_float32_matmul_precision('medium')
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
-torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.enabled = True
+torch.cuda.set_per_process_memory_fraction(0.5, device=torch.cuda.current_device())
 
 
 def normalize_numbers_danish(text):
@@ -181,8 +177,8 @@ test_dataset = NSTDatasetWrapper(test_dataset)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=64,
-    num_workers=16,
+    batch_size=32,
+    num_workers=8,
     pin_memory=True,
     prefetch_factor=8,
     collate_fn=collate_fn,
@@ -192,18 +188,40 @@ device = torch.device("cuda")
 
 model = transformers.WhisperForConditionalGeneration.from_pretrained(
     model_name,
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
+    torch_dtype=torch.float16,
+    attn_implementation="sdpa",
     device_map="auto",
-    use_cache=True
 )
 model = model.to(device)
-model = torch.compile(
-    model,
-    mode="max-autotune",
-    fullgraph=True
-)
+
+# Enable static cache and compile
+model.generation_config.cache_implementation = "static"
+model.generation_config.max_new_tokens = 256
+model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
 model.eval()
+
+# Define forced decoder IDs
+forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
+
+print("Running warmup...")
+# Create dummy audio for warmup (1 second of silence at 16kHz)
+dummy_audio = torch.zeros(16000).numpy()
+
+for _ in range(2):
+    with torch.inference_mode():
+        dummy_inputs = processor(
+            dummy_audio, 
+            return_tensors="pt", 
+            sampling_rate=16000
+        )
+        dummy_input_features = dummy_inputs.input_features.to(device, torch.float16)
+        
+        _ = model.generate(
+            dummy_input_features,
+            forced_decoder_ids=forced_decoder_ids,
+            min_new_tokens=256,
+            max_new_tokens=256
+        )
 
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
 
@@ -215,7 +233,7 @@ all_preds = []
 all_refs = []
 
 for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
-    input_features = inputs["input_features"].to(device, torch.bfloat16, non_blocking=True)
+    input_features = inputs["input_features"].to(device, torch.float16, non_blocking=True)
     attention_mask = inputs["attention_mask"].to(device, non_blocking=True)
 
     # Use autocast in bfloat16 mode
