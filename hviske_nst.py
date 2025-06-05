@@ -134,6 +134,14 @@ def normalize_text(text):
     text = text.lower()
     text = text.strip()
     
+    danish_chars = {'æ': 'æ', 'ø': 'ø', 'å': 'å'}
+    normalized = unicodedata.normalize('NFD', text)
+    for dk_char, replacement in danish_chars.items():
+        normalized = normalized.replace(dk_char, replacement)
+    
+    # Remove accents/diacritics
+    text = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+    
     # Convert number words to digits
     text = normalize_numbers_danish(text)
     
@@ -141,7 +149,6 @@ def normalize_text(text):
     text = re.sub(r'[^a-zæøå0-9 ]', '', text)
     
     return text
-
 # Use OpenAI's Whisper model
 model_name = "openai/whisper-large-v3"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
