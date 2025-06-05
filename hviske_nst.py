@@ -11,6 +11,7 @@ from dataset.load_coral import coral_dataset_dict
 from dataset.nst_da import nst_dataset_dict
 from dataset.audio_dataset import filter_difficult_examples
 from datasets import Audio
+import pandas as pd
 
 # Set various CUDA and cudnn settings
 torch.set_float32_matmul_precision('medium')
@@ -275,3 +276,9 @@ total_wer = wer(all_refs, all_preds)
 total_cer = cer(all_refs, all_preds)
 print(f"\nAverage WER: {total_wer:.4f}")
 print(f"\nAverage CER: {total_cer:.4f}")
+results_df = pd.DataFrame({
+    'reference': all_refs,
+    'prediction': all_preds
+})
+results_df.to_csv('whisper_nst_results.csv', index=False, encoding='utf-8')
+print("\nResults saved to whisper_nst_results.csv")
