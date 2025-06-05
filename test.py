@@ -78,14 +78,12 @@ def main(hydra_conf: DictConfig):
         logger=logger,
         config=eval_cfg,
         batch_size=eval_cfg.training.batch_size,
-        num_batches=100,
     )
 
-    #wandb.log({
-    #    "eval/epoch_wer": wer,
-    #    "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-    #    "eval/epoch_cer": cer
-    #})
+    # wandb.log({
+    #    "eval/dialect_wer": dialect_wer_dict,
+    #    "eval/dialect_cer": dialect_cer_dict
+    # })
 
 if __name__ == "__main__":
     main()
