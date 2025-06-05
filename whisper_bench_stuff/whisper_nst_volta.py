@@ -14,8 +14,7 @@ from datasets import Audio
 import pandas as pd
 
 # Set various CUDA and cudnn settings
-torch.set_float32_matmul_precision('medium')
-torch.cuda.set_per_process_memory_fraction(0.5, device=torch.cuda.current_device())
+torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
 
 
 def normalize_numbers_danish(text):
@@ -150,7 +149,7 @@ def normalize_text(text):
     
     return text
 # Use OpenAI's Whisper model
-model_name = "openai/whisper-large-v3"
+model_name = "syvai/hviske-v2"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
 
 class NSTDatasetWrapper(Dataset):
@@ -185,7 +184,7 @@ test_dataset = NSTDatasetWrapper(test_dataset)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=32,
+    batch_size=64,
     num_workers=8,
     pin_memory=True,
     prefetch_factor=8,
@@ -209,30 +208,6 @@ model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=T
 model.eval()
 
 # Define forced decoder IDs
-forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
-
-print("Running warmup...")
-# Create dummy audio for warmup (1 second of silence at 16kHz)
-dummy_audio = torch.zeros(16000).numpy()
-
-for _ in range(2):
-    with torch.inference_mode():
-        dummy_inputs = processor(
-            dummy_audio, 
-            return_tensors="pt", 
-            sampling_rate=16000,
-            return_attention_mask=True
-        )
-        dummy_input_features = dummy_inputs.input_features.to(device, torch.float16)
-        dummy_attention_mask = dummy_inputs.attention_mask.to(device)
-        
-        _ = model.generate(
-            dummy_input_features,
-            attention_mask=dummy_attention_mask,
-            forced_decoder_ids=forced_decoder_ids,
-            min_new_tokens=256,
-            max_new_tokens=256
-        )
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
 
 total_wer = 0.0
@@ -287,5 +262,5 @@ results_df = pd.DataFrame({
     'reference': all_refs,
     'prediction': all_preds
 })
-results_df.to_csv('whisper_nst_results.csv', index=False, encoding='utf-8')
-print("\nResults saved to whisper_nst_results.csv")
+results_df.to_csv('hviske_nst_results.csv', index=False, encoding='utf-8')
+print("\nResults saved to hviske_nst_results.csv")

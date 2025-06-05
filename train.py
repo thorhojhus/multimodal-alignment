@@ -147,7 +147,6 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
 
         trainable_params.append({"params": list(model.audio_encoder.audio_encoder.parameters())})
         logger.info("Training full encoder parameters")
-            j
     if hasattr(model, 'projector') and model.projector is not None:
         # Standard mode - training the projector
         trainable_params.append({"params": list(model.projector.parameters())})
