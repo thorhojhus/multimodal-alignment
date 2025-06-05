@@ -8,15 +8,8 @@ from transformers import AutoProcessor
 import jiwer
 from tqdm import tqdm
 
-torch.set_float32_matmul_precision('high')
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+torch.set_float32_matmul_precision('medium')
 torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.enabled = True
-
-
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Config
 config = SimpleNamespace(

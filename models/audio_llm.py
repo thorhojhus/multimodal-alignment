@@ -207,6 +207,8 @@ class AudioLLMModel(nn.Module):
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
+        if isinstance(audio_embeds, tuple):
+            audio_embeds = audio_embeds[0]
         B, D, *_ = audio_embeds.shape 
 
         for i in range(B):

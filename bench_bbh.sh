@@ -8,7 +8,7 @@
 #BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 01:00
+#BSUB -W 06:00
 ### Memory per core
 #BSUB -R "rusage[mem=4GB]"
 ### -- send notification at start --
