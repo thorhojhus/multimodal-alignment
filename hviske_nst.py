@@ -212,17 +212,19 @@ for _ in range(2):
         dummy_inputs = processor(
             dummy_audio, 
             return_tensors="pt", 
-            sampling_rate=16000
+            sampling_rate=16000,
+            return_attention_mask=True
         )
         dummy_input_features = dummy_inputs.input_features.to(device, torch.float16)
+        dummy_attention_mask = dummy_inputs.attention_mask.to(device)
         
         _ = model.generate(
             dummy_input_features,
+            attention_mask=dummy_attention_mask,
             forced_decoder_ids=forced_decoder_ids,
             min_new_tokens=256,
             max_new_tokens=256
         )
-
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
 
 total_wer = 0.0
