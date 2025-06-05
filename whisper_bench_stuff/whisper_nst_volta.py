@@ -11,23 +11,16 @@ from dataset.load_coral import coral_dataset_dict
 from dataset.nst_da import nst_dataset_dict
 from dataset.audio_dataset import filter_difficult_examples
 from datasets import Audio
+import pandas as pd
 
 # Set various CUDA and cudnn settings
-torch.set_float32_matmul_precision('medium')
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
-torch.cuda.set_per_process_memory_fraction(0.9, device=torch.cuda.current_device())
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.enabled = True
+torch.cuda.set_per_process_memory_fraction(0.95, device=torch.cuda.current_device())
 
 
 def normalize_numbers_danish(text):
     """
     Convert Danish number words to digits, handling complex number phrases.
     """
-    # Replace common composite forms first
-    text = text.replace("og ", " ")  # Remove connecting "og" between numbers
-    
     # Define number mappings
     basic_numbers = {
         "nul": 0, "en": 1, "et": 1, "to": 2, "tre": 3, "fire": 4, "fem": 5,
@@ -46,67 +39,89 @@ def normalize_numbers_danish(text):
         "milliard": 1000000000, "milliarder": 1000000000
     }
     
-    # Process text through multiple passes
+    def parse_number_sequence(words, start_idx=0):
+        """Parse a complete number sequence and return (value, end_index)"""
+        if start_idx >= len(words):
+            return 0, start_idx
+            
+        current_value = 0
+        accumulator = 0
+        i = start_idx
+        
+        while i < len(words):
+            word = words[i]
+            
+            # Handle compound numbers (e.g., "treogtyve")
+            if "og" in word and word != "og":
+                parts = word.split("og")
+                if len(parts) == 2:
+                    if parts[0] in basic_numbers and parts[1] in tens:
+                        accumulator = basic_numbers[parts[0]] + tens[parts[1]]
+                        i += 1
+                        continue
+                    elif parts[0] in basic_numbers and parts[1] in basic_numbers:
+                        # Handle cases like "toogtyve" (22)
+                        accumulator = basic_numbers[parts[0]] + basic_numbers[parts[1]]
+                        i += 1
+                        continue
+            
+            # Handle basic numbers
+            if word in basic_numbers:
+                if accumulator == 0:
+                    accumulator = basic_numbers[word]
+                else:
+                    # If we already have a number, this starts a new one
+                    break
+                i += 1
+                
+            # Handle tens
+            elif word in tens:
+                if accumulator == 0:
+                    accumulator = tens[word]
+                else:
+                    # If we already have a number, this starts a new one
+                    break
+                i += 1
+                
+            # Handle multipliers
+            elif word in multipliers:
+                if accumulator == 0:
+                    accumulator = 1  # Default multiplier
+                current_value += accumulator * multipliers[word]
+                accumulator = 0
+                i += 1
+                
+            # Handle "og" (and) - continue parsing
+            elif word == "og":
+                i += 1
+                
+            else:
+                # Not a number word, stop parsing
+                break
+        
+        # Add any remaining accumulator
+        current_value += accumulator
+        
+        return current_value, i
+    
+    # Process the text
     words = text.split()
     result = []
     i = 0
     
     while i < len(words):
-        current_word = words[i]
+        # Try to parse a number sequence
+        value, next_i = parse_number_sequence(words, i)
         
-        # Check for compound numbers (e.g., "treogtyve")
-        if "og" in current_word and len(current_word) > 2:
-            parts = current_word.split("og")
-            if len(parts) == 2 and parts[0] in basic_numbers and parts[1] in tens:
-                result.append(str(basic_numbers[parts[0]] + tens[parts[1]]))
-                i += 1
-                continue
-        
-        # Process number phrases
-        if current_word in basic_numbers:
-            value = basic_numbers[current_word]
-            
-            # Look ahead for multipliers
-            if i + 1 < len(words) and words[i+1] in multipliers:
-                value *= multipliers[words[i+1]]
-                i += 2
-                
-                # Check if we need to add more numbers
-                if i < len(words):
-                    next_val = 0
-                    
-                    # Try to process the rest as a number
-                    rest_text = " ".join(words[i:])
-                    rest_result = normalize_numbers_danish(rest_text)
-                    if any(c.isdigit() for c in rest_result):
-                        # Extract number from result
-                        num_str = ''.join(c for c in rest_result if c.isdigit())
-                        if num_str:
-                            next_val = int(num_str)
-                    
-                    result.append(str(value + next_val))
-                    break
-                else:
-                    result.append(str(value))
-            else:
-                result.append(str(value))
-                i += 1
-                
-        elif current_word in tens:
-            result.append(str(tens[current_word]))
-            i += 1
-            
-        elif current_word in multipliers:
-            # Handle standalone multipliers (rare but possible)
-            result.append(str(multipliers[current_word]))
-            i += 1
-            
+        if next_i > i:
+            # We parsed a number
+            result.append(str(value))
+            i = next_i
         else:
-            # Not a number word, keep as is
-            result.append(current_word)
+            # Not a number, keep the word as is
+            result.append(words[i])
             i += 1
     
-    # Join and return
     return " ".join(result)
 
 def normalize_text(text):
@@ -118,6 +133,14 @@ def normalize_text(text):
     text = text.lower()
     text = text.strip()
     
+    danish_chars = {'æ': 'æ', 'ø': 'ø', 'å': 'å'}
+    normalized = unicodedata.normalize('NFD', text)
+    for dk_char, replacement in danish_chars.items():
+        normalized = normalized.replace(dk_char, replacement)
+    
+    # Remove accents/diacritics
+    text = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+    
     # Convert number words to digits
     text = normalize_numbers_danish(text)
     
@@ -125,7 +148,6 @@ def normalize_text(text):
     text = re.sub(r'[^a-zæøå0-9 ]', '', text)
     
     return text
-
 # Use OpenAI's Whisper model
 model_name = "syvai/hviske-v2"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
@@ -163,7 +185,7 @@ test_dataset = NSTDatasetWrapper(test_dataset)
 loader = DataLoader(
     test_dataset,
     batch_size=64,
-    num_workers=16,
+    num_workers=8,
     pin_memory=True,
     prefetch_factor=8,
     collate_fn=collate_fn,
@@ -173,19 +195,19 @@ device = torch.device("cuda")
 
 model = transformers.WhisperForConditionalGeneration.from_pretrained(
     model_name,
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
+    torch_dtype=torch.float16,
+    attn_implementation="sdpa",
     device_map="auto",
-    use_cache=True
 )
 model = model.to(device)
-model = torch.compile(
-    model,
-    mode="max-autotune",
-    fullgraph=True
-)
+
+# Enable static cache and compile
+model.generation_config.cache_implementation = "static"
+model.generation_config.max_new_tokens = 256
+model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
 model.eval()
 
+# Define forced decoder IDs
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
 
 total_wer = 0.0
@@ -196,7 +218,7 @@ all_preds = []
 all_refs = []
 
 for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
-    input_features = inputs["input_features"].to(device, torch.bfloat16, non_blocking=True)
+    input_features = inputs["input_features"].to(device, torch.float16, non_blocking=True)
     attention_mask = inputs["attention_mask"].to(device, non_blocking=True)
 
     # Use autocast in bfloat16 mode
@@ -236,3 +258,9 @@ total_wer = wer(all_refs, all_preds)
 total_cer = cer(all_refs, all_preds)
 print(f"\nAverage WER: {total_wer:.4f}")
 print(f"\nAverage CER: {total_cer:.4f}")
+results_df = pd.DataFrame({
+    'reference': all_refs,
+    'prediction': all_preds
+})
+results_df.to_csv('hviske_nst_results.csv', index=False, encoding='utf-8')
+print("\nResults saved to hviske_nst_results.csv")

@@ -29,4 +29,7 @@ module swap cuda/12.8.0
 cd /work3/s224233/shared/multimodal-alignment
 source .venv/bin/activate
 
-python train.py model.lm_model_name=google/gemma-3-4b-it model.projector=wav2vecbert model.encoder_model_name=facebook/w2v-bert-2.0 model.train_encoder_full=true wandb.enabled=true training.batch_size=8 training.gradient_accumulation_steps=8 model.load_in_4bit=true training.gradient_clip_norm=10.0 training.lr=5e-5 training.warmup_steps=500
+python train.py model.lm_model_name=google/gemma-3-4b-it model.projector=transformer model.encoder_model_name=facebook/w2v-bert-2.0 model.train_encoder_full=false wandb.enabled=false training.batch_size=8 training.gradient_accumulation_steps=2 model.load_in_4bit=true training.gradient_clip_norm=1.0 training.lr=1e-4 training.warmup_steps=500 training.num_epochs=1 dataset.do_filter=true dataset.max_audio_length=20.0 
+
+
+python train.py model.lm_model_name=google/gemma-3-4b-it model.projector=transformer model.encoder_model_name=facebook/w2v-bert-2.0 model.train_encoder_full=true wandb.enabled=false training.batch_size=4 training.gradient_accumulation_steps=4 model.load_in_4bit=true training.gradient_clip_norm=1.0 training.lr=1e-4 training.warmup_steps=500 training.num_epochs=2 dataset.do_filter=true dataset.max_audio_length=20.0 dataset.name=librispeech dataset.split=train.clean.100 model.downsample_factor=8

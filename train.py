@@ -93,14 +93,24 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
             logger.info("Applying no data augmentations")
             pass
 
+    # Create test dataset with a modified config to ensure sort_by_length is not applied
+    test_cfg = cfg
+    if hasattr(test_cfg.dataset, 'sort_by_length') and test_cfg.dataset.sort_by_length:
+        # Create a copy of the config to avoid modifying the original
+        import copy
+        test_cfg = copy.deepcopy(cfg)
+        # Ensure sort_by_length is set to False for the test dataset
+        test_cfg.dataset.sort_by_length = False
+        logger.info("Disabled sort_by_length for test dataset")
+    
     test_dataset = AudioChatDataset(
-        lm_model=cfg.model.lm_model_name,
-        dataset=cfg.dataset.name,
-        split=cfg.dataset.test_split,
+        lm_model=test_cfg.model.lm_model_name,
+        dataset=test_cfg.dataset.name,
+        split=test_cfg.dataset.test_split,
         tokenizer=model.tokenizer,
         processor=processor,
-        T=cfg.model.token_length,
-        config=cfg,
+        T=test_cfg.model.token_length,
+        config=test_cfg,
     )
 
     trainable_params = []
@@ -137,7 +147,6 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
 
         trainable_params.append({"params": list(model.audio_encoder.audio_encoder.parameters())})
         logger.info("Training full encoder parameters")
-            
     if hasattr(model, 'projector') and model.projector is not None:
         # Standard mode - training the projector
         trainable_params.append({"params": list(model.projector.parameters())})
@@ -146,15 +155,18 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
     if not trainable_params:
         raise ValueError("No trainable parameters found. Check model configuration.")
 
-    optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr)
+    optimizer = torch.optim.AdamW(trainable_params, lr=cfg.training.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.05)
     
     print_parameter_count(model, logger)
 
+    # If sort_by_length is enabled, don't shuffle the dataset (keep the sorted order)
+    shuffle_dataset = not (hasattr(cfg.dataset, 'sort_by_length') and cfg.dataset.sort_by_length)
+    
     dataloader = DataLoader(
         dataset, 
         batch_size=cfg.training.batch_size, 
         collate_fn=functools.partial(collate_fn, tokenizer=model.tokenizer, T=dataset.T), 
-        shuffle=True,
+        shuffle=shuffle_dataset,
         num_workers=8,
         prefetch_factor=4,
         pin_memory=True

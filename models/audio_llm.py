@@ -7,7 +7,6 @@ import transformers
 import os
 from config import AppConfig
 
-from liger_kernel.transformers import AutoLigerKernelForCausalLM
 from liger_kernel.transformers.functional import liger_kl_div
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -104,7 +103,7 @@ class AudioLLMModel(nn.Module):
         ) if self.config.model.load_in_4bit else None
 
         # initialize language model with flash attention and liger kernels for memory efficiency
-        lm = AutoModelForCausalLM.from_pretrained(
+        lm = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.model.lm_model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
@@ -136,7 +135,8 @@ class AudioLLMModel(nn.Module):
             return LinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
         elif type == "transformer":
             from models.transformer_adapter import SpeechAdapter
-            return SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim).to("cuda", torch.bfloat16)
+            adapter = SpeechAdapter(input_dim=encoder_dim, llm_embed_dim=embed_dim, downsample_factor=self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+            return torch.compile(adapter, dynamic=True)
         elif type == "wav2vecbert":
             from transformers.models.wav2vec2_bert.modeling_wav2vec2_bert import Wav2Vec2BertAdapter
             from transformers.models.wav2vec2_bert import Wav2Vec2BertConfig
@@ -144,6 +144,12 @@ class AudioLLMModel(nn.Module):
             return Wav2Vec2BertAdapter(adapter_config).to("cuda", torch.bfloat16)
         elif type == "simple-linear":
             return SimpleLinearProjector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "primer":
+            from models.primer_transformer_adapter import PrimerTransformerProjector
+            return PrimerTransformerProjector(encoder_dim=encoder_dim, embed_dim=embed_dim, downsample_factor=self.config.model.downsample_factor).to("cuda", torch.bfloat16)
+        elif type == "transformer-layered":
+            from models.transformer_layered import LayeredTransformerProjector
+            return LayeredTransformerProjector(encoder_dim=encoder_dim, embed_dim=embed_dim, downsample_factor=self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
         return Projector(encoder_dim, embed_dim, self.config.model.downsample_factor).to("cuda", torch.bfloat16)
 
@@ -201,6 +207,8 @@ class AudioLLMModel(nn.Module):
     ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         # combine text and audio embeddings for each sample
         combined_embeds_list, combined_labels_list, combined_attention_mask_list = [], [], []
+        if isinstance(audio_embeds, tuple):
+            audio_embeds = audio_embeds[0]
         B, D, *_ = audio_embeds.shape 
 
         for i in range(B):

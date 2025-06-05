@@ -79,21 +79,27 @@ class AudioTokenizer(nn.Module):
         Forward pass of the audio tokenizer.
         
         Args:
-            features (Tensor): Whisper encoder features [batch_size, seq_len, hidden_size]
+            features (Tensor): Audio encoder features [batch_size, seq_len, hidden_size]
             
         Returns:
             Tensor: Embedded audio tokens [batch_size, num_tokens, hidden_size]
         """
+        n, w, d = features.shape
         
         if self.hidden_stride > 1:
-            n, w, d = features.shape
-            assert w % self.hidden_stride == 0, "Sequence length must be divisible by hidden_stride"
+            # Calculate padding needed to make sequence length divisible by hidden_stride
+            remainder = w % self.hidden_stride
+            if remainder != 0:
+                # Pad the sequence to make it divisible
+                padding_length = self.hidden_stride - remainder
+                padding = torch.zeros(n, padding_length, d, device=features.device, dtype=features.dtype)
+                features = torch.cat([features, padding], dim=1)
+                w += padding_length
+            
             features = features.reshape(n, w // self.hidden_stride, self.hidden_stride * d)
         
         logits = self.head(features)  # [batch_size, seq_len/hidden_stride, vocab_size]
-        
         tokens = self.tokenize(logits)  # [batch_size, seq_len/hidden_stride, vocab_size]
-        
         embeds = self.audio_embedding(tokens)  # [batch_size, num_tokens, hidden_size]
         return embeds
 
@@ -103,10 +109,10 @@ if __name__ == "__main__":
 
     # initialize the tokenizer
     tokenizer = AudioTokenizer(
-        vocab_size=16384,
+        vocab_size=8192,
         embed_dim=512,
         hidden_stride=5,
-        encoder_name="openai/whisper-tiny",
+        encoder_name="openai/whisper-large-v3",
     )
 
     # mock audio input: assuming preprocessed mel spectrograms

@@ -103,7 +103,7 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
             input_features,
             attention_mask=attention_mask,
             forced_decoder_ids=forced_decoder_ids,
-            num_beams=1,
+            num_beams=5,
             length_penalty=1.0,
             use_cache=True
         )

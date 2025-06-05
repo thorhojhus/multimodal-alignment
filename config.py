@@ -26,7 +26,7 @@ class ModelConfig(BaseModel):
     lm_model_name: str
     load_in_4bit: bool
     encoder_model_name: str
-    projector: Literal["simple", "tinyalign", "linear", "conv", "transformer", "simple-linear"]
+    projector: Literal["simple", "tinyalign", "linear", "conv", "transformer", "simple-linear", "primer", "transformer-layered"]
     token_length: int
     audio_tokenizer: bool
     audio_tokenizer_vocab_size: int
@@ -66,6 +66,8 @@ class DatasetConfig(BaseModel):
     do_filter: bool
     min_audio_length: float
     max_audio_length: float
+    sort_by_length: bool = False
+    combine_speakers: bool = False
 
 class AppConfig(BaseModel):
     hydra: Optional[HydraConfig] = None

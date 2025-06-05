@@ -54,3 +54,5 @@ dataset:
   do_filter: false
   min_audio_length: 1.0  # minimum audio length in seconds
   max_audio_length: 20.0  # maximum audio length in seconds
+  sort_by_length: false   # if true, sorts training data by audio length (longest first) and disables shuffling
+  combine_speakers: false # if true, combines short audio samples (below half max_audio_length) with speaker prefixes
