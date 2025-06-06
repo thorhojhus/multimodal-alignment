@@ -1,10 +1,10 @@
 import torch
-import torchaudio
 import transformers
 from jiwer import wer, cer
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
-from dataset.load_coral import coral_dataset_dict
+from dataset.load_librispeech import librispeech_dataset_dict
+import re
 
 # Set various CUDA and cudnn settings
 torch.set_float32_matmul_precision('high')
@@ -18,30 +18,19 @@ torch.backends.cudnn.enabled = True
 model_name = "syvai/hviske-v2"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
 
-class CoralTestDataset(Dataset):
+class LibriSpeechTestDataset(Dataset):
     def __init__(self, data):
         self.data = data
-        self.resampler = torchaudio.transforms.Resample(
-            orig_freq=48000, 
-            new_freq=16000
-        ).to(torch.float32)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         sample = self.data[idx]
-        audio_array = torch.tensor(sample["audio"]["array"], dtype=torch.float32)
-        resampled_audio = self.resampler(audio_array).numpy()
-        return resampled_audio, sample["text"].lower()
+        return sample["audio"]["array"], sample["text"].lower()
 
 def worker_init_fn(worker_id):
     torch.manual_seed(worker_id)
-    global resampler
-    resampler = torchaudio.transforms.Resample(
-        orig_freq=48000, 
-        new_freq=16000
-    ).to(torch.float32)
 
 def collate_fn(batch):
     audios, refs = zip(*batch)
@@ -54,13 +43,13 @@ def collate_fn(batch):
     )
     return inputs, list(refs)
 
-test_data = coral_dataset_dict["test"]
-test_dataset = CoralTestDataset(test_data)
+test_data = librispeech_dataset_dict["test"]
+test_dataset = LibriSpeechTestDataset(test_data)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=32,
-    num_workers=16,
+    batch_size=16,
+    num_workers=4,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn,
@@ -77,11 +66,6 @@ model = transformers.WhisperForConditionalGeneration.from_pretrained(
     use_cache=True
 )
 model = model.to(device)
-model = torch.compile(
-    model,
-    mode="max-autotune",
-    fullgraph=True
-)
 model.eval()
 
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
@@ -102,12 +86,13 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
             input_features,
             attention_mask=attention_mask,
             forced_decoder_ids=forced_decoder_ids,
-            num_beams=5,
+            num_beams=1,
             length_penalty=1.0,
-            use_cache=True
+            use_cache=True,
         )
     
-    predictions = processor.batch_decode(generated, skip_special_tokens=True)
+    predictions: str = processor.batch_decode(generated)
+    predictions = [re.sub(r"(<\|endoftext\|>)+$", "", pred) for pred in predictions]
     batch_wer = wer(batch_refs, predictions)
     batch_cer = cer(batch_refs, predictions)
     total_wer += batch_wer
@@ -115,10 +100,17 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
     num_batches += 1
 
     # Periodic cache clearing
-    if num_batches % 10 == 0:
+    if num_batches % 100 == 0:
+
+        print(f"--- Processed {num_batches} batches ---")
+        print(f"\tAverage WER so far: {total_wer / num_batches:.4f}")
+        print(f"\tAverage CER so far: {total_cer / num_batches:.4f}")
+        print(f"Last generated: {predictions[-1]}")
+        print(f"Last reference: {batch_refs[-1]}")
+
         torch.cuda.empty_cache()
 
 average_wer = total_wer / num_batches
 average_cer = total_cer / num_batches
-print(f"\nAverage WER: {average_wer:.4f}")
-print(f"\nAverage CER: {average_cer:.4f}")
+print(f"Average WER: {average_wer:.4f}")
+print(f"Average CER: {average_cer:.4f}")

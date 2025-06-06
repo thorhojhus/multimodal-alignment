@@ -4,9 +4,11 @@ import functools
 import logging
 import os
 import torch
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from dataset.audio_dataset import collate_fn
 from dataset.audio_dataset import AudioChatDataset
+from collections import defaultdict
 import jiwer
 import wandb
 from config import AppConfig
@@ -228,21 +230,8 @@ def run_evaluation(
     config: AppConfig,
     batch_size: int = 64
 ) -> Tuple[float, float]:
-    """
-    Run batched evaluation on test dataset and calculate WER/CER metrics.
-    
-    Args:
-        model: The AudioLLM model to evaluate
-        test_dataset: Dataset to evaluate on
-        tokenizer: Model tokenizer
-        logger: Logger instance
-        n_samples: Number of samples to evaluate (if > dataset size, uses full dataset)
-        config: Model configuration
-        batch_size: Batch size for evaluation
-    
-    Returns:
-        Tuple of (WER, CER) metrics
-    """
+    """Return WER/CER metrics"""
+
     model.eval()
     torch.cuda.empty_cache()
     model_name = config.model.lm_model_name
@@ -294,18 +283,89 @@ def run_evaluation(
     logger.info(f"Character Error Rate (CER): {cer:.4f}")
 
     if config.wandb.enabled:
-            if config.wandb.upload_audio:
-                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "Audio"])
-                for gen, gt, audiowav in zip(all_generated, all_ground_truths, all_audio):
-                    eval_table.add_data(gen, gt, wandb.Audio(save_to_temp_mp3(audiowav, 16000), sample_rate=16000, caption="Speech"))
-            else:
-                eval_table = wandb.Table(columns=["Generated", "Ground Truth", "WER", "WER (corrected)", "CER"])
-                for gen, gt, w_i, w_c_i, c_i in zip(all_generated, all_ground_truths, wer_list, corrected_wer_list, cer_list):
-                    eval_table.add_data(gen, gt, w_i, w_c_i, c_i)
-            wandb.run.log({"evaluation_completions": eval_table})
+        if config.wandb.upload_audio:
+            eval_table = wandb.Table(columns=["Generated", "Ground Truth", "Audio"])
+            for gen, gt, audiowav in zip(all_generated, all_ground_truths, all_audio):
+                eval_table.add_data(gen, gt, wandb.Audio(save_to_temp_mp3(audiowav, 16000), sample_rate=16000, caption="Speech"))
+        else:
+            eval_table = wandb.Table(columns=["Generated", "Ground Truth", "WER", "WER (corrected)", "CER"])
+            for gen, gt, w_i, w_c_i, c_i in zip(all_generated, all_ground_truths, wer_list, corrected_wer_list, cer_list):
+                eval_table.add_data(gen, gt, w_i, w_c_i, c_i)
+        wandb.run.log({"evaluation_completions": eval_table})
     torch.cuda.empty_cache()
     model.train()
     return wer, cer, corrected_wer_list
+
+
+def run_evaluation_dialects(
+    model: torch.nn.Module,
+    test_dataset: AudioChatDataset,
+    tokenizer,
+    logger: logging.Logger,
+    config: AppConfig,
+    batch_size: int = 64,
+    num_batches: int | None = None,
+) -> Tuple[float, float]:
+    """Return WER/CER metrics over dialects."""
+    
+    model.eval()
+    torch.cuda.empty_cache()
+    model_name = config.model.lm_model_name
+    
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        collate_fn=functools.partial(collate_fn, tokenizer=tokenizer, T=test_dataset.T, include_raw_audio=True),
+        shuffle=True
+    )
+
+    samples_processed = 0
+    
+    all_generated = []
+    all_ground_truths = []
+    all_audio = []
+    all_dialects = []
+    batches_processed = 0
+
+    for batch in tqdm(test_loader, desc="Generating predictions", total=num_batches if num_batches else len(test_loader)):
+
+        if num_batches is not None and batches_processed >= num_batches:
+            break
+            
+        generated_texts, ground_truths = generate_batch(
+            model, batch, model_name, tokenizer
+        )
+
+        # dialect grouping
+        all_dialects.extend(batch["dialect"])
+            
+        all_generated.extend(generated_texts)
+        all_ground_truths.extend(ground_truths)
+        all_audio.extend(batch["raw_audio"])
+        samples_processed += len(generated_texts)
+
+        batches_processed += 1
+
+    logger.info("Calculating metrics...")
+    _, _, wer_list, cer_list, _ = calculate_metrics(all_generated, all_ground_truths) 
+    
+    dialect_wer_dict = defaultdict(list)
+    dialect_cer_dict = defaultdict(list)
+    dialects = set()
+    for dialect, wer, cer in zip(all_dialects, wer_list, cer_list):
+        dialect_wer_dict[dialect].append(wer)
+        dialect_cer_dict[dialect].append(cer)
+        dialects.add(dialect)
+
+    logger.info(f"Results over {len(all_generated)} samples:")
+    for dialect in dialects:
+        logger.info(f"Dialect: {dialect} (samples: {len(dialect_wer_dict[dialect])})")
+        logger.info(f"Word Error Rate (WER): {(sum(dialect_wer_dict[dialect])/len(dialect_wer_dict[dialect])):.4f}")
+        logger.info(f"Character Error Rate (CER): {(sum(dialect_cer_dict[dialect])/len(dialect_cer_dict[dialect])):.4f}")
+
+    torch.cuda.empty_cache()
+    model.train()
+    return dialect_wer_dict, dialect_cer_dict
 
 
 def calculate_eval_loss(

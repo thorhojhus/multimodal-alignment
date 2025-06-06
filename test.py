@@ -11,7 +11,7 @@ from models.audio_llm import AudioLLMModel
 from omegaconf import DictConfig
 from utils import (
     load_checkpoint,
-    run_evaluation
+    run_evaluation_dialects
 )
 
 # set up a module-level logger
@@ -71,26 +71,14 @@ def main(hydra_conf: DictConfig):
         config=eval_cfg,
     )
 
-    wer, cer, corrected_wer_list = run_evaluation(
+    dialect_wer_dict, dialect_cer_dict = run_evaluation_dialects(
         model=model, 
         test_dataset=test_dataset, 
         tokenizer=model.tokenizer, 
-        logger=logger, 
-        n_samples=None, 
+        logger=logger,
         config=eval_cfg,
         batch_size=eval_cfg.training.batch_size,
     )
-
-    logger.info(
-        f"WER: {wer:.2f} (C: {(sum(corrected_wer_list) / len(corrected_wer_list)):0.4f}) | CER: {cer:.2f} | "
-    )
-
-    if eval_cfg.wandb.enabled:
-        wandb.log({
-            "eval/epoch_wer": wer,
-            "eval/epoch_wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
-            "eval/epoch_cer": cer
-        })
 
 if __name__ == "__main__":
     main()

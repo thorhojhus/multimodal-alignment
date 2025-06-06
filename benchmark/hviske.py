@@ -1,9 +1,10 @@
 import torch
+import torchaudio
 import transformers
 from jiwer import wer, cer
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
-from dataset.nst_da import nst_dataset_dict
+from dataset.load_coral import coral_dataset_dict
 
 # Set various CUDA and cudnn settings
 torch.set_float32_matmul_precision('high')
@@ -17,19 +18,30 @@ torch.backends.cudnn.enabled = True
 model_name = "syvai/hviske-v2"
 processor = transformers.WhisperProcessor.from_pretrained(model_name)
 
-class NSTTestDataset(Dataset):
+class CoralTestDataset(Dataset):
     def __init__(self, data):
         self.data = data
+        self.resampler = torchaudio.transforms.Resample(
+            orig_freq=48000, 
+            new_freq=16000
+        ).to(torch.float32)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         sample = self.data[idx]
-        return sample["audio"]["array"], sample["text"].lower()
+        audio_array = torch.tensor(sample["audio"]["array"], dtype=torch.float32)
+        resampled_audio = self.resampler(audio_array).numpy()
+        return resampled_audio, sample["text"].lower()
 
 def worker_init_fn(worker_id):
     torch.manual_seed(worker_id)
+    global resampler
+    resampler = torchaudio.transforms.Resample(
+        orig_freq=48000, 
+        new_freq=16000
+    ).to(torch.float32)
 
 def collate_fn(batch):
     audios, refs = zip(*batch)
@@ -42,13 +54,13 @@ def collate_fn(batch):
     )
     return inputs, list(refs)
 
-test_data = nst_dataset_dict["test"]
-test_dataset = NSTTestDataset(test_data)
+test_data = coral_dataset_dict["test"]
+test_dataset = CoralTestDataset(test_data)
 
 loader = DataLoader(
     test_dataset,
-    batch_size=16,
-    num_workers=8,
+    batch_size=32,
+    num_workers=4,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn,
@@ -61,14 +73,10 @@ model = transformers.WhisperForConditionalGeneration.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
     attn_implementation="flash_attention_2",
+    device_map="auto",
     use_cache=True
 )
 model = model.to(device)
-model = torch.compile(
-    model,
-    mode="max-autotune",
-    fullgraph=True
-)
 model.eval()
 
 forced_decoder_ids = processor.get_decoder_prompt_ids(language="danish", task="transcribe")
@@ -89,7 +97,7 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
             input_features,
             attention_mask=attention_mask,
             forced_decoder_ids=forced_decoder_ids,
-            num_beams=5,
+            num_beams=1,
             length_penalty=1.0,
             use_cache=True
         )
@@ -107,6 +115,8 @@ for inputs, batch_refs in tqdm(loader, desc="Processing batches"):
         print(f"--- Processed {num_batches} batches ---")
         print(f"\tAverage WER so far: {total_wer / num_batches:.4f}")
         print(f"\tAverage CER so far: {total_cer / num_batches:.4f}")
+        print(f"Last generated: {predictions[-1]}")
+        print(f"Last reference: {batch_refs[-1]}")
 
         torch.cuda.empty_cache()
 
