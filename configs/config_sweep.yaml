@@ -1,26 +1,34 @@
 hydra:
   job:
     chdir: true
+  run:
+    dir: /work3/s224233/shared/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 wandb:
   enabled: false
   run_name: "default"
+  upload_audio: false
 
 model:
   downsample_factor: 10
   lm_model_name: "google/gemma-2-2b-it"
   load_in_4bit: false
   encoder_model_name: "openai/whisper-base"
-  projector: "simple" # can be simple (ultravox style), tinyalign, linear (one layer)
+  projector: "simple" # can be simple (ultravox style), tinyalign, linear (one layer), conv, transformer, simple-linear
   token_length: 30
   audio_tokenizer: false
   audio_tokenizer_vocab_size: 16384
   train_llm: false
   train_encoder: false
+  expand_embeds: false # must use BiCodec as encoder_model_name if true
+  train_encoder_wav2vec: false # if we want to train the transformer layers of the wav2vec model
+  train_encoder_full: false
 
 training:
-  num_epochs: 2
-  batch_size: 16
+  num_epochs: 3
+  batch_size: 8
+  gradient_accumulation_steps: 1
+  gradient_clip_norm: 1.0
   lr: 3e-4
   warmup_steps: 50
   checkpoint_dir: "checkpoints"
@@ -29,15 +37,22 @@ training:
   resume_checkpoint_path: "checkpoints/checkpoint_latest.pt"
   load_lr_from_checkpoint: false
   log_every_n_steps: 10
-  loss: "kl_loss" # can be kl_loss, embed_loss or none for ce
+  loss: "ce" # can be kl_loss, embed_loss or ce
   kl_temp: 2.0
+  do_phonemize: false
+  seed: null
+  run_count: null
 
 eval:
-  n_samples: 64
-  batch_size: 8
+  n_samples: 128
+  batch_size: null
 
 
 dataset:
+  augment: "none"
   name: "librispeech"
-  split: "train.clean.360"
-  test_split: "test.clean"
+  split: "train"
+  test_split: "test"
+  do_filter: false
+  min_audio_length: 1.0  # minimum audio length in seconds
+  max_audio_length: 20.0  # maximum audio length in seconds

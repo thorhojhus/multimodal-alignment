@@ -41,15 +41,15 @@ def main(hydra_conf: DictConfig):
         logger=logger,
         load_lr_from_checkpoint=False
     )
-
-    # wandb.init(
-    #    entity="borkeren",
-    #    project="benchmarks",
-    #    name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
-    #        if eval_cfg.wandb.run_name == "default"
-    #        else eval_cfg.wandb.run_name,
-    #    config=dict(eval_cfg)
-    #)
+    if eval_cfg.wandb.enabled:
+        wandb.init(
+            entity="borkeren",
+            project="benchmarks",
+            name=f"benchmark-{eval_cfg.model.lm_model_name.split('/', maxsplit=1)[-1]}-processor-{eval_cfg.model.encoder_model_name.split('/', maxsplit=1)[-1]}-dataset-{eval_cfg.dataset.name}-at-{datetime.now()}"
+                if eval_cfg.wandb.run_name == "default"
+                else eval_cfg.wandb.run_name,
+            config=dict(eval_cfg)
+        )
 
     if ("w2v-bert" in eval_cfg.model.encoder_model_name):
         from transformers import AutoFeatureExtractor
@@ -79,11 +79,6 @@ def main(hydra_conf: DictConfig):
         config=eval_cfg,
         batch_size=eval_cfg.training.batch_size,
     )
-
-    # wandb.log({
-    #    "eval/dialect_wer": dialect_wer_dict,
-    #    "eval/dialect_cer": dialect_cer_dict
-    # })
 
 if __name__ == "__main__":
     main()

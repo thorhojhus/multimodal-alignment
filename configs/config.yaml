@@ -40,6 +40,8 @@ training:
   loss: "ce" # can be kl_loss, embed_loss or ce
   kl_temp: 2.0
   do_phonemize: false
+  seed: null
+  run_count: null
 
 eval:
   n_samples: 128

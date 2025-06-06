@@ -322,6 +322,17 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
                         "eval/wer_corrected": sum(corrected_wer_list) / len(corrected_wer_list),
                         "eval/cer": cer
                     })
+                    
+                # check if we need to save encoder weights too
+                save_components = [model.projector]
+                if cfg.model.train_encoder_full:
+                    save_components.append(model.audio_encoder.audio_encoder)
+                    
+                save_checkpoint(
+                    save_components, optimizer, scheduler,
+                    global_step, eval_loss, 
+                    cfg.training.checkpoint_dir, logger, is_best=False
+                )
 
             # reset batch timer
             batch_start_time = time.monotonic()
@@ -347,7 +358,7 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
         if epoch == 0 or eval_loss < best_eval_loss:
             best_eval_loss = eval_loss
             is_best = True
-            
+        
         # check if we need to save encoder weights too
         save_components = [model.projector]
         if cfg.model.train_encoder_full:
@@ -358,7 +369,6 @@ def train(model: torch.nn.Module, cfg: AppConfig) -> None:
             global_step, eval_loss, 
             cfg.training.checkpoint_dir, logger, is_best
         )
-            
         logger.info(
             f"Epoch {epoch+1} Summary | "
             f"Average Train Loss: {avg_loss:.4f} | "
